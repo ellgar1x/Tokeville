@@ -36,19 +36,20 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthRoute = path === "/login" || path.startsWith("/auth");
+  const isPublicRoute = path === "/landing";
   // API route handlers do their own auth and must never be redirected.
   const isApiRoute = path.startsWith("/api");
 
-  // Unauthenticated users are sent to /login (except auth + API routes).
-  if (!user && !isAuthRoute && !isApiRoute) {
+  // Unauthenticated users see the landing page first, then login.
+  if (!user && !isAuthRoute && !isPublicRoute && !isApiRoute) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/landing";
     return NextResponse.redirect(url);
   }
 
   if (user && !isApiRoute) {
-    // Authenticated users shouldn't sit on the login page.
-    if (isAuthRoute) {
+    // Authenticated users shouldn't sit on the login or landing page.
+    if (isAuthRoute || isPublicRoute) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
       return NextResponse.redirect(url);
