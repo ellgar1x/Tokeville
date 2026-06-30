@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useDemo } from "@/store/demo";
 import {
   pct,
@@ -53,14 +54,13 @@ export function WalletCard() {
         </div>
 
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => openModal({ type: "buy" })}
+          <Link
+            href="/deposit"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3.5 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all duration-200 hover:from-gold hover:to-gold-deep cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-gold/50"
           >
             <PlusIcon className="h-4 w-4" />
-            Buy TOK
-          </button>
+            Deposit
+          </Link>
           <button
             type="button"
             onClick={() => openModal({ type: "allocate" })}

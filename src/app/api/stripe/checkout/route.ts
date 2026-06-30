@@ -38,7 +38,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "amountUsd must be between 1 and 10000" }, { status: 400 });
   }
 
-  const tokenAmount = Math.round(tokensFromUsd(amountUsd));
+  const PLATFORM_FEE_RATE = 0.12;
+  const netUsd = amountUsd * (1 - PLATFORM_FEE_RATE);
+  const tokenAmount = Math.round(tokensFromUsd(netUsd));
   const usdCents = Math.round(amountUsd * 100);
 
   // Derive the origin from the incoming request so it works in dev and prod.
@@ -56,8 +58,8 @@ export async function POST(request: Request) {
             currency: "usd",
             unit_amount: usdCents,
             product_data: {
-              name: `Tokeville Tokens — ${(tokenAmount / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 })}M TOK`,
-              description: `Funds your Tokeville treasury at $10 per 1M tokens.`,
+              name: `Tokeville Deposit — ${(tokenAmount / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 })}M TOK credited`,
+              description: `Includes 12% platform fee. Net credit: $${netUsd.toFixed(2)} at $10 per 1M TOK.`,
             },
           },
         },

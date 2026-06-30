@@ -11,6 +11,7 @@ import {
   CoinsIcon,
   ExchangeIcon,
   PieIcon,
+  PlusIcon,
   SettingsIcon,
   TokevilleMark,
   UsersIcon,
@@ -18,6 +19,7 @@ import {
 
 const nav = [
   { label: "Treasury", href: "/", icon: WalletHome },
+  { label: "Deposit", href: "/deposit", icon: DepositIcon },
   { label: "Chat", href: "/chat", icon: ChatIcon },
   { label: "Spend", href: "/spend", icon: PieIcon },
   { label: "Sub-accounts", href: "/sub-accounts", icon: UsersIcon },
@@ -26,6 +28,10 @@ const nav = [
   { label: "Exchange", href: "/exchange", icon: ExchangeIcon },
   { label: "Cards & Keys", href: "/cards", icon: CardIcon },
 ];
+
+function DepositIcon(props: React.SVGProps<SVGSVGElement>) {
+  return <PlusIcon {...props} />;
+}
 
 function WalletHome(props: React.SVGProps<SVGSVGElement>) {
   return <CoinsIcon {...props} />;
