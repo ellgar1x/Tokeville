@@ -1,26 +1,221 @@
 @import "tailwindcss";
 
+/*
+  Tokeville design system — black & gold. A premium fintech aesthetic where
+  tokens are the currency: warm near-black surfaces, gold as the accent and
+  primary action color, monospaced figures for that ledger/ticker feel.
+*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0b;
+  --surface: #141416;
+  --surface-2: #1a1a1d;
+  --elevated: #1d1d21;
+  --foreground: #f6f4ee;
+  --muted: #a2a2ab;
+  --subtle: #71717a;
+  --border: #262629;
+  --border-strong: #34343a;
+
+  /* Gold — the brand + primary action color */
+  --gold: #e8b85f;
+  --gold-bright: #f6cf76;
+  --gold-deep: #c79a45;
+  --gold-soft: rgba(232, 184, 95, 0.12);
+  --gold-ring: rgba(232, 184, 95, 0.4);
+
+  --accent: var(--gold);
+  --accent-soft: var(--gold-soft);
+
+  --positive: #4ade80;
+  --positive-soft: rgba(74, 222, 128, 0.12);
+  --warning: #f5b545;
+  --warning-soft: rgba(245, 181, 69, 0.13);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+
+  /* Provider tints — brightened for legibility on black */
+  --anthropic: #e08a63;
+  --openai: #2bbd95;
+  --google: #6c9bff;
+  --other: #9aa0ac;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-elevated: var(--elevated);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-gold-deep: var(--gold-deep);
+  --color-gold-soft: var(--gold-soft);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-anthropic: var(--anthropic);
+  --color-openai: var(--openai);
+  --color-google: var(--google);
+  --color-other: var(--other);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Light theme ─────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --background: #f5f4f0;
+  --surface: #ffffff;
+  --surface-2: #eeecea;
+  --elevated: #ffffff;
+  --foreground: #18181a;
+  --muted: #52525b;
+  --subtle: #a1a1aa;
+  --border: #e0deda;
+  --border-strong: #cccac6;
+
+  /* Gold sits nicely on light too — slightly deeper for contrast */
+  --gold: #c8900a;
+  --gold-bright: #e8a812;
+  --gold-deep: #a87208;
+  --gold-soft: rgba(200, 144, 10, 0.10);
+  --gold-ring: rgba(200, 144, 10, 0.35);
+
+  --positive: #16a34a;
+  --positive-soft: rgba(22, 163, 74, 0.10);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.10);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.10);
+
+  --anthropic: #c0582e;
+  --openai: #059669;
+  --google: #2563eb;
+  --other: #6b7280;
+}
+
+* {
+  border-color: var(--border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background-image: radial-gradient(
+    900px 380px at 50% -120px,
+    rgba(232, 184, 95, 0.06),
+    transparent 70%
+  );
+  background-attachment: fixed;
+}
+
+[data-theme="light"] body {
+  background-image: radial-gradient(
+    900px 380px at 50% -120px,
+    rgba(200, 144, 10, 0.04),
+    transparent 70%
+  );
+}
+
+/* Tabular figures for all numeric/financial data */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Reusable gold gradient text for the token symbol/balance accents */
+.gold-text {
+  background: linear-gradient(135deg, var(--gold-bright), var(--gold-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Thin gold top-edge highlight used on the hero card */
+.gold-edge {
+  position: relative;
+}
+.gold-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(246, 207, 118, 0.55),
+    transparent
+  );
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.anim-toast {
+  animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.anim-overlay {
+  animation: overlay-in 160ms ease-out;
+}
+.anim-modal {
+  animation: modal-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Custom scrollbar for inset scroll areas */
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
