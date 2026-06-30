@@ -55,32 +55,18 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Role + workspace-type gating: members live at /member, institution admins
-    // live under /institution, standard admins everywhere else.
+    // Role-based gating: members live at /member, admins everywhere else.
     const role = (user.app_metadata?.role as string) ?? "admin";
-    const wsType = (user.app_metadata?.workspace_type as string) ?? "standard";
     const isMemberRoute = path === "/member";
-    const isInstitutionRoute = path === "/institution" || path.startsWith("/institution/");
-
-    if (role === "member") {
-      if (!isMemberRoute) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/member";
-        return NextResponse.redirect(url);
-      }
-    } else if (wsType === "institution") {
-      if (!isInstitutionRoute) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/institution";
-        return NextResponse.redirect(url);
-      }
-    } else {
-      // Standard admin — keep out of member + institution areas.
-      if (isMemberRoute || isInstitutionRoute) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/";
-        return NextResponse.redirect(url);
-      }
+    if (role === "member" && !isMemberRoute) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/member";
+      return NextResponse.redirect(url);
+    }
+    if (role === "admin" && isMemberRoute) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      return NextResponse.redirect(url);
     }
   }
 

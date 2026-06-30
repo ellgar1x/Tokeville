@@ -69,24 +69,8 @@ and server layout read them without an extra query:
   never see the treasury balance, other sub-accounts, or alerts** — enforced by RLS, not
   just the UI.
 
-`src/proxy.ts` gates routes: unauthenticated → `/login`; members → `/member`; **institution
-admins → `/institution`**; standard admins → away from `/member` and `/institution`; `/api/*`
-is exempt (route handlers do their own auth).
-
-### Workspace types
-
-`workspaces.type` is `standard` (default) or `institution`, mirrored into
-`auth.users.app_metadata.workspace_type` so the proxy + layout branch without a query. Chosen
-at admin sign-up and switchable anytime (`set_workspace_type` RPC; Settings → Account type for
-standard, the Account tab for institution).
-
-- **Standard** — the metered model above: route AI through Tokeville, token budgets, treasury.
-- **Institution** — AI is **not** routed through Tokeville. Admins manually log AI spend by
-  **department** in USD, set monthly budgets, import spend via CSV, and see a consolidated
-  dashboard. Lives entirely at `/institution` (tabs: Overview, Departments, Log spend, Import,
-  Account). Tables: `departments`, `spend_entries`. The `record_spend` RPC logs an entry and,
-  when a department crosses **80%** of its monthly budget, raises a `budget_80` alert (reusing
-  the `alerts` table, with the admin's email recorded) — surfaced in a banner.
+`src/proxy.ts` gates routes: unauthenticated → `/login`; members → `/member`; admins → away
+from `/member`; `/api/*` is exempt (route handlers do their own auth).
 
 ---
 
@@ -191,6 +175,8 @@ State: a server component loads data via `lib/db.ts` and passes it to a client s
   **server-side only** — users never connect their own Claude accounts (nothing to steal).
 - **Streams** the reply token-by-token (SSE: `delta` events then a final `done` event).
   `src/lib/chatStream.ts` consumes it; both ChatPanel and ChatWorkspace render incrementally.
+- Assistant replies render as **markdown** (`src/components/MarkdownMessage.tsx`,
+  react-markdown + remark-gfm) with syntax-highlighted, copyable code blocks (rehype-highlight).
 - **Pre-flight balance gate**: if the chosen sub-account's remaining budget ≤ 0, returns 402
   with a "top up" message before any AI call.
 - Computes the **exact USD cost** from the model's `inputPer1M`/`outputPer1M`, converts to TOK

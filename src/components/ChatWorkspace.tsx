@@ -5,6 +5,7 @@ import { tok } from "@/lib/format";
 import { CoinsIcon, PlusIcon, SendIcon, ShieldIcon, TrashIcon } from "./icons";
 import { PROVIDERS } from "@/lib/models";
 import { streamChat, type ChatUsage } from "@/lib/chatStream";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 interface Msg {
   role: "user" | "assistant";
@@ -357,13 +358,19 @@ export function ChatWorkspace({
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] ${m.role === "user" ? "items-end" : "items-start"}`}>
                 <div
-                  className={`whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
+                  className={`rounded-2xl px-4 py-2.5 text-sm ${
                     m.role === "user"
-                      ? "bg-gradient-to-b from-gold-bright to-gold text-[#0a0a0b]"
+                      ? "whitespace-pre-wrap bg-gradient-to-b from-gold-bright to-gold text-[#0a0a0b]"
                       : "border border-border bg-surface-2 text-foreground"
                   }`}
                 >
-                  {m.content || (loading && i === active.messages.length - 1 ? "…" : "")}
+                  {m.role === "user" ? (
+                    m.content
+                  ) : m.content ? (
+                    <MarkdownMessage content={m.content} />
+                  ) : loading && i === active.messages.length - 1 ? (
+                    <span className="text-subtle">…</span>
+                  ) : null}
                 </div>
                 {m.usage && (
                   <p className="tnum mt-1 px-1 text-[11px] text-subtle">
