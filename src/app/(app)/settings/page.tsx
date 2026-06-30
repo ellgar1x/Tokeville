@@ -5,6 +5,7 @@ import { useDemo } from "@/store/demo";
 import { usd, USD_PER_MILLION_TOKENS } from "@/lib/format";
 import { AIProviderSettings } from "@/components/AIProviderSettings";
 import { TwoFactorSettings } from "@/components/TwoFactorSettings";
+import { createClient } from "@/lib/supabase/client";
 
 const PRESET_PALETTES = [
   { label: "Gold (default)", primary: "#e8b85f", secondary: "#c79a45" },
@@ -27,6 +28,21 @@ export default function SettingsPage() {
   const [primaryColor, setPrimaryColor] = useState(state.workspace.primaryColor ?? "#e8b85f");
   const [secondaryColor, setSecondaryColor] = useState(state.workspace.secondaryColor ?? "#c79a45");
   const [savingColors, setSavingColors] = useState(false);
+
+  const [confirmConvert, setConfirmConvert] = useState(false);
+  const [converting, setConverting] = useState(false);
+
+  async function convertToInstitution() {
+    setConverting(true);
+    const supabase = createClient();
+    const { error } = await supabase.rpc("set_workspace_type", { p_type: "institution" });
+    if (error) {
+      setConverting(false);
+      return;
+    }
+    // Full reload so the proxy + server layout pick up the new workspace type.
+    window.location.href = "/";
+  }
 
   const dirty =
     displayName !== state.profile.displayName || orgName !== state.profile.orgName;
@@ -186,6 +202,46 @@ export default function SettingsPage() {
             <dd className="font-medium">{state.providers.length}</dd>
           </div>
         </dl>
+      </section>
+
+      {/* Account type */}
+      <section className="rounded-2xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.3)] sm:p-7">
+        <h2 className="text-sm font-semibold tracking-tight">Account type</h2>
+        <p className="mt-0.5 text-xs text-subtle">
+          This is a <span className="font-medium text-gold">Standard</span> workspace — AI routes through Tokeville with
+          token budgets and live metering. Convert to an Institution workspace to instead log AI spend by department in
+          USD, set monthly budgets, and import spend via CSV.
+        </p>
+        {confirmConvert ? (
+          <div className="mt-4 rounded-xl border border-gold/20 bg-gold-soft p-4">
+            <p className="text-xs text-muted">
+              Converting switches this workspace to the Institution dashboard. Your treasury data stays in the database,
+              but the metered chat + token tools are replaced by manual spend tracking. You can switch back anytime.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={convertToInstitution}
+                disabled={converting}
+                className="inline-flex h-9 items-center rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-xs font-semibold text-[#0a0a0b] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer"
+              >
+                {converting ? "Converting…" : "Confirm — convert to Institution"}
+              </button>
+              <button
+                onClick={() => setConfirmConvert(false)}
+                className="inline-flex h-9 items-center rounded-lg border border-border px-4 text-xs text-muted hover:bg-surface-2 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmConvert(true)}
+            className="mt-4 inline-flex h-9 items-center rounded-lg border border-border-strong bg-surface-2 px-4 text-xs font-medium text-muted transition-colors hover:border-gold/40 hover:text-gold cursor-pointer"
+          >
+            Convert to Institution workspace
+          </button>
+        )}
       </section>
 
       {/* AI Providers */}

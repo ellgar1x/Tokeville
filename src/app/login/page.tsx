@@ -20,6 +20,7 @@ function LoginInner() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [adminType, setAdminType] = useState<"standard" | "institution">("standard");
 
   const [mfa, setMfa] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
@@ -61,7 +62,7 @@ function LoginInner() {
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { display_name: name || email.split("@")[0] } },
+          options: { data: { display_name: name || email.split("@")[0], workspace_type: adminType } },
         });
         if (signUpError) throw signUpError;
       }
@@ -289,6 +290,35 @@ function LoginInner() {
                     placeholder="Elliot Garcia"
                     className={inputClass}
                   />
+                </div>
+              )}
+              {adminMode === "signup" && (
+                <div className="mb-4">
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-subtle">
+                    Account type
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { key: "standard", title: "Standard", desc: "Route AI through Tokeville with token budgets + live metering" },
+                      { key: "institution", title: "Institution", desc: "Log AI spend by department in USD; no API routing" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setAdminType(opt.key)}
+                        className={`rounded-lg border p-3 text-left transition-colors duration-200 cursor-pointer ${
+                          adminType === opt.key
+                            ? "border-gold/50 bg-gold-soft"
+                            : "border-border-strong bg-surface hover:border-gold/30"
+                        }`}
+                      >
+                        <span className={`block text-sm font-semibold ${adminType === opt.key ? "text-gold" : ""}`}>
+                          {opt.title}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-subtle">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="mb-4">

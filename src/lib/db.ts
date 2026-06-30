@@ -10,8 +10,12 @@ import type {
   Alert,
   BudgetRequest,
   DashboardData,
+  Department,
+  InstitutionAlert,
+  InstitutionData,
   MemberData,
   ProviderSpend,
+  SpendEntry,
   SubAccount,
   Wallet,
 } from "./data";
@@ -257,5 +261,66 @@ export async function loadMemberDashboard(
       orgName: profileRes.data?.org_name ?? "",
       email,
     },
+  };
+}
+
+// ─── Institution dashboard ───────────────────────────────────────────────────
+export async function loadInstitution(
+  supabase: SupabaseClient,
+  email: string,
+): Promise<InstitutionData> {
+  const [wsRes, profileRes, deptRes, spendRes, alertRes] = await Promise.all([
+    supabase.from("workspaces").select("id, name, primary_color, secondary_color").single(),
+    supabase.from("profiles").select("*").single(),
+    supabase.from("departments").select("*").order("name"),
+    supabase.from("spend_entries").select("*").order("spent_on", { ascending: false }),
+    supabase.from("alerts").select("*").eq("type", "budget_80").order("created_at", { ascending: false }),
+  ]);
+
+  for (const [name, res] of Object.entries({ wsRes, profileRes, deptRes, spendRes, alertRes })) {
+    if ((res as { error?: { message: string } | null }).error) {
+      console.error(`[db] loadInstitution: ${name} failed`, { error: (res as { error: { message: string } }).error.message, email });
+    }
+  }
+
+  const departments: Department[] = (deptRes.data ?? []).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    monthlyBudgetUsd: Number(r.monthly_budget_usd),
+  }));
+
+  const spend: SpendEntry[] = (spendRes.data ?? []).map((r) => ({
+    id: r.id as string,
+    departmentId: r.department_id as string,
+    tool: r.tool as string,
+    amountUsd: Number(r.amount_usd),
+    spentOn: r.spent_on as string,
+    note: (r.note as string | null) ?? null,
+    source: r.source as string,
+  }));
+
+  const alerts: InstitutionAlert[] = (alertRes.data ?? []).map((r) => ({
+    id: r.id as string,
+    departmentId: (r.department_id as string | null) ?? null,
+    title: r.title as string,
+    detail: r.detail as string,
+    emailTo: r.email_to as string,
+    read: Boolean(r.read),
+    createdAt: r.created_at as string,
+  }));
+
+  return {
+    workspaceId: (wsRes.data?.id as string) ?? "",
+    workspaceName: wsRes.data?.name ?? "Workspace",
+    primaryColor: wsRes.data?.primary_color ?? null,
+    secondaryColor: wsRes.data?.secondary_color ?? null,
+    profile: {
+      displayName: profileRes.data?.display_name ?? "",
+      orgName: profileRes.data?.org_name ?? "",
+      email,
+    },
+    departments,
+    spend,
+    alerts,
   };
 }

@@ -69,8 +69,24 @@ and server layout read them without an extra query:
   never see the treasury balance, other sub-accounts, or alerts** — enforced by RLS, not
   just the UI.
 
-`src/proxy.ts` gates routes: unauthenticated → `/login`; members → `/member`; admins → away
-from `/member`; `/api/*` is exempt (route handlers do their own auth).
+`src/proxy.ts` gates routes: unauthenticated → `/login`; members → `/member`; **institution
+admins → `/institution`**; standard admins → away from `/member` and `/institution`; `/api/*`
+is exempt (route handlers do their own auth).
+
+### Workspace types
+
+`workspaces.type` is `standard` (default) or `institution`, mirrored into
+`auth.users.app_metadata.workspace_type` so the proxy + layout branch without a query. Chosen
+at admin sign-up and switchable anytime (`set_workspace_type` RPC; Settings → Account type for
+standard, the Account tab for institution).
+
+- **Standard** — the metered model above: route AI through Tokeville, token budgets, treasury.
+- **Institution** — AI is **not** routed through Tokeville. Admins manually log AI spend by
+  **department** in USD, set monthly budgets, import spend via CSV, and see a consolidated
+  dashboard. Lives entirely at `/institution` (tabs: Overview, Departments, Log spend, Import,
+  Account). Tables: `departments`, `spend_entries`. The `record_spend` RPC logs an entry and,
+  when a department crosses **80%** of its monthly budget, raises a `budget_80` alert (reusing
+  the `alerts` table, with the admin's email recorded) — surfaced in a banner.
 
 ---
 

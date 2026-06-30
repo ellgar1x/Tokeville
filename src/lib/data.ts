@@ -74,6 +74,44 @@ export interface Profile {
   email: string;
 }
 
+// ─── Institution account type (manual AI-spend tracking, USD) ────────────────
+export interface Department {
+  id: string;
+  name: string;
+  monthlyBudgetUsd: number;
+}
+
+export interface SpendEntry {
+  id: string;
+  departmentId: string;
+  tool: string;
+  amountUsd: number;
+  spentOn: string; // ISO date
+  note: string | null;
+  source: string; // 'manual' | 'csv'
+}
+
+export interface InstitutionAlert {
+  id: string;
+  departmentId: string | null;
+  title: string;
+  detail: string;
+  emailTo: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface InstitutionData {
+  workspaceId: string;
+  workspaceName: string;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  profile: Profile;
+  departments: Department[];
+  spend: SpendEntry[];
+  alerts: InstitutionAlert[];
+}
+
 export type Role = "admin" | "member";
 
 export interface Workspace {
