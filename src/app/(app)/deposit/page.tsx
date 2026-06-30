@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { tok, usd, tokensFromCurrency, CURRENCIES, USD_PER_MILLION_TOKENS } from "@/lib/format";
 
-const PLATFORM_FEE_RATE = 0.12;
+const PLATFORM_FEE_RATE = 0.05;
 const PRESETS = [10, 50, 100, 250, 500, 1000];
 
 export default function DepositPage() {
@@ -125,7 +125,7 @@ export default function DepositPage() {
             usd(dollars, { cents: true })
           )}
           <div className="flex items-center justify-between text-xs text-subtle">
-            <span>Platform fee (12%)</span>
+            <span>Platform fee (5%)</span>
             <span className="tnum font-mono text-danger">− {usd(feeUsd, { cents: true })}</span>
           </div>
           <div className="my-1 border-t border-border" />
