@@ -52,9 +52,13 @@ ANTHROPIC_API_KEY=                                # SERVER ONLY — paste a key 
 
 ## Auth & roles
 
-Email/password via Supabase. Emails are **auto-confirmed** at the DB level (a
-`before insert on auth.users` trigger) so signup → dashboard with no email step; the login
-page does `signUp` then `signInWithPassword`.
+The login page has an **Admin / Member** toggle:
+- **Admin** — email + password. Open self-sign-up creates a brand-new admin workspace
+  (`signUp` then `signInWithPassword`). Emails are **auto-confirmed** at the DB level.
+- **Member** — username + password. Members **cannot self-register**; an admin provisions
+  them on the Team page (`POST /api/members`, service-role `auth.admin.createUser`). The
+  username maps to a synthetic email `<username>@members.tokeville.app` (`src/lib/members.ts`),
+  so usernames are globally unique. Member login only accepts these accounts.
 
 Two roles, stored in `auth.users.raw_app_meta_data` (`role`, `workspace_id`) so the proxy
 and server layout read them without an extra query:
@@ -87,8 +91,9 @@ RLS. SECURITY DEFINER helper functions (`is_workspace_admin`, `is_workspace_memb
 - `profiles`.
 
 **Key RPCs** (SECURITY DEFINER, authorize via `auth.uid()`)
-- `handle_new_user()` — signup trigger: joins an invited workspace as member, else creates a
-  new admin workspace + seeds demo data.
+- `handle_new_user()` — signup trigger. Branches: (0) admin-provisioned member — role +
+  workspace_id set via the Admin API → joins that workspace as member; (1) legacy email
+  invite → joins as member; (2) otherwise → creates a new admin workspace + seeds demo data.
 - `seed_user_data(uid, ws)` / `reset_user_data()` — seed / re-seed a workspace.
 - `use_tokens(sub_account, amount, provider, detail)` — the spend path: deducts budget,
   burns treasury, adds provider spend, logs activity. Also runs **dynamic budgeting**: if

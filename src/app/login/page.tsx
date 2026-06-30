@@ -4,30 +4,60 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { TokevilleMark } from "@/components/icons";
+import { usernameToEmail } from "@/lib/members";
 
-type Mode = "signin" | "signup" | "mfa";
+type Audience = "admin" | "member";
+type AdminMode = "signin" | "signup";
 
 function LoginInner() {
   const params = useSearchParams();
   const invitedEmail = params.get("email") ?? "";
-  const [mode, setMode] = useState<Mode>(invitedEmail ? "signup" : "signin");
+
+  const [audience, setAudience] = useState<Audience>("admin");
+  const [adminMode, setAdminMode] = useState<AdminMode>(invitedEmail ? "signup" : "signin");
+
   const [email, setEmail] = useState(invitedEmail);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+
+  const [mfa, setMfa] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function switchAudience(next: Audience) {
+    setAudience(next);
+    setError(null);
+  }
+
+  // Returns true if an MFA challenge was started (caller should stop).
+  async function maybeStartMfa(supabase: ReturnType<typeof createClient>) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.nextLevel === "aal2" && aal.currentLevel !== aal.nextLevel) {
+      const { data: factorsData } = await supabase.auth.mfa.listFactors();
+      const factor = factorsData?.totp?.[0];
+      if (factor) {
+        const { data: chal } = await supabase.auth.mfa.challenge({ factorId: factor.id });
+        setMfaFactorId(factor.id);
+        setMfaChallengeId(chal?.id ?? null);
+        setMfa(true);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function handleAdmin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     const supabase = createClient();
-
     try {
-      if (mode === "signup") {
+      if (adminMode === "signup") {
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -38,25 +68,46 @@ function LoginInner() {
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) throw signInError;
 
-      // Check if MFA is required before redirecting.
-      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aal?.nextLevel === "aal2" && aal.currentLevel !== aal.nextLevel) {
-        const { data: factorsData } = await supabase.auth.mfa.listFactors();
-        const factor = factorsData?.totp?.[0];
-        if (factor) {
-          const { data: chal } = await supabase.auth.mfa.challenge({ factorId: factor.id });
-          setMfaFactorId(factor.id);
-          setMfaChallengeId(chal?.id ?? null);
-          setMode("mfa");
-          setLoading(false);
-          return;
-        }
+      if (await maybeStartMfa(supabase)) {
+        setLoading(false);
+        return;
       }
-
-      // Full navigation so the server layout picks up the fresh session cookie.
       window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
+      setLoading(false);
+    }
+  }
+
+  async function handleMember(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    const supabase = createClient();
+    try {
+      const memberEmail = usernameToEmail(username);
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: memberEmail,
+        password,
+      });
+      if (signInError) {
+        throw new Error("Incorrect username or password.");
+      }
+
+      // Safety: only admin-provisioned member accounts may use this entrance.
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && user.app_metadata?.role !== "member") {
+        await supabase.auth.signOut();
+        throw new Error("That isn't a member account. Use the Admin tab.");
+      }
+
+      if (await maybeStartMfa(supabase)) {
+        setLoading(false);
+        return;
+      }
+      window.location.href = "/";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed");
       setLoading(false);
     }
   }
@@ -84,6 +135,22 @@ function LoginInner() {
   const inputClass =
     "h-11 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm outline-none transition-colors duration-200 placeholder:text-subtle focus:border-gold/50 focus:ring-2 focus:ring-gold/15";
 
+  const heading = mfa
+    ? "Two-factor check"
+    : audience === "member"
+      ? "Member sign-in"
+      : adminMode === "signin"
+        ? "Welcome back"
+        : "Create your treasury";
+
+  const subheading = mfa
+    ? "Enter the 6-digit code from your authenticator app"
+    : audience === "member"
+      ? "Sign in with the username your workspace admin gave you"
+      : adminMode === "signin"
+        ? "Sign in to manage your AI token spend"
+        : "Start managing AI tokens as currency";
+
   return (
     <main className="relative flex min-h-screen items-center justify-center px-5 py-10">
       <div
@@ -97,19 +164,31 @@ function LoginInner() {
       <div className="relative w-full max-w-sm">
         <div className="mb-7 flex flex-col items-center text-center">
           <TokevilleMark className="h-12 w-12" />
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">
-            {mode === "mfa" ? "Two-factor check" : mode === "signin" ? "Welcome back" : "Create your treasury"}
-          </h1>
-          <p className="mt-1 text-sm text-muted">
-            {mode === "mfa"
-              ? "Enter the 6-digit code from your authenticator app"
-              : mode === "signin"
-                ? "Sign in to manage your AI token spend"
-                : "Start managing AI tokens as currency"}
-          </p>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">{heading}</h1>
+          <p className="mt-1 text-sm text-muted">{subheading}</p>
         </div>
 
-        {mode === "mfa" ? (
+        {/* Audience switch — hidden during the MFA step */}
+        {!mfa && (
+          <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-border bg-surface-2 p-1">
+            {(["admin", "member"] as Audience[]).map((a) => (
+              <button
+                key={a}
+                type="button"
+                onClick={() => switchAudience(a)}
+                className={`h-9 rounded-lg text-sm font-medium transition-colors duration-200 cursor-pointer ${
+                  audience === a
+                    ? "bg-surface text-foreground shadow-sm border border-border"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                {a === "admin" ? "Admin" : "Member"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mfa ? (
           <form
             onSubmit={handleMfa}
             className="rounded-2xl border border-border bg-surface p-6 shadow-[0_2px_24px_rgba(0,0,0,0.4)]"
@@ -139,13 +218,65 @@ function LoginInner() {
               {loading ? "Verifying…" : "Verify"}
             </button>
           </form>
+        ) : audience === "member" ? (
+          <form
+            onSubmit={handleMember}
+            className="rounded-2xl border border-border bg-surface p-6 shadow-[0_2px_24px_rgba(0,0,0,0.4)]"
+          >
+            <div className="mb-4">
+              <label htmlFor="username" className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-subtle">
+                Username
+              </label>
+              <input
+                id="username"
+                type="text"
+                required
+                autoCapitalize="none"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="taylor.r"
+                className={inputClass}
+              />
+            </div>
+            <div className="mb-5">
+              <label htmlFor="member-password" className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-subtle">
+                Password
+              </label>
+              <input
+                id="member-password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
+                className={inputClass}
+              />
+            </div>
+            {error && (
+              <p className="mb-4 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-gradient-to-b from-gold-bright to-gold text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            >
+              {loading ? "Just a moment…" : "Sign in"}
+            </button>
+            <p className="mt-5 text-center text-xs text-subtle">
+              Member accounts are created by your workspace admin.
+            </p>
+          </form>
         ) : (
           <>
             <form
-              onSubmit={handleSubmit}
+              onSubmit={handleAdmin}
               className="rounded-2xl border border-border bg-surface p-6 shadow-[0_2px_24px_rgba(0,0,0,0.4)]"
             >
-              {mode === "signup" && (
+              {adminMode === "signup" && (
                 <div className="mb-4">
                   <label htmlFor="name" className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-subtle">
                     Name
@@ -184,7 +315,7 @@ function LoginInner() {
                   type="password"
                   required
                   minLength={6}
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  autoComplete={adminMode === "signin" ? "current-password" : "new-password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 6 characters"
@@ -201,17 +332,17 @@ function LoginInner() {
                 disabled={loading}
                 className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-gold/50"
               >
-                {loading ? "Just a moment…" : mode === "signin" ? "Sign in" : "Create account"}
+                {loading ? "Just a moment…" : adminMode === "signin" ? "Sign in" : "Create account"}
               </button>
             </form>
             <p className="mt-5 text-center text-sm text-muted">
-              {mode === "signin" ? "New to Tokeville?" : "Already have an account?"}{" "}
+              {adminMode === "signin" ? "New to Tokeville?" : "Already have an account?"}{" "}
               <button
                 type="button"
-                onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(null); }}
+                onClick={() => { setAdminMode(adminMode === "signin" ? "signup" : "signin"); setError(null); }}
                 className="font-medium text-gold transition-colors duration-200 hover:text-gold-bright cursor-pointer"
               >
-                {mode === "signin" ? "Create an account" : "Sign in"}
+                {adminMode === "signin" ? "Create an account" : "Sign in"}
               </button>
             </p>
           </>
