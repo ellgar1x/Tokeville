@@ -211,55 +211,27 @@ body {
   border-radius: 999px;
 }
 
-/* ─── Landing page motion ─────────────────────────────────────────────────── */
-@keyframes reveal-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes float-soft {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-@keyframes grid-drift {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 56px 56px;
-  }
-}
-@keyframes sheen {
-  0% {
-    transform: translateX(-120%);
-  }
-  60%, 100% {
-    transform: translateX(220%);
-  }
-}
-
-.reveal {
+/* ─── Landing page scroll reveal ──────────────────────────────────────────── */
+/* Elements start hidden + nudged down, then settle when ScrollReveal adds
+   .is-visible as they scroll into view. Transition-based (not infinite). */
+.reveal-on-scroll {
   opacity: 0;
-  animation: reveal-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.2s ease;
+  will-change: opacity, transform;
 }
-.reveal-1 { animation-delay: 0.05s; }
-.reveal-2 { animation-delay: 0.15s; }
-.reveal-3 { animation-delay: 0.25s; }
-.reveal-4 { animation-delay: 0.35s; }
-.reveal-5 { animation-delay: 0.45s; }
-
-.float-soft {
-  animation: float-soft 6s ease-in-out infinite;
+.reveal-on-scroll.is-visible {
+  opacity: 1;
+  transform: none;
 }
+.reveal-d1 { transition-delay: 0.06s; }
+.reveal-d2 { transition-delay: 0.12s; }
+.reveal-d3 { transition-delay: 0.18s; }
+.reveal-d4 { transition-delay: 0.24s; }
+.reveal-d5 { transition-delay: 0.30s; }
 
 /* Gold gradient border via mask — used on premium cards */
 .gold-border {

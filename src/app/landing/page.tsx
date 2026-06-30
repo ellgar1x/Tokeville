@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TokevilleMark } from "@/components/icons";
+import { ScrollReveal } from "@/components/ScrollReveal";
 
 export const metadata = {
   title: "Tokeville — AI spend, under control",
@@ -10,6 +11,7 @@ export const metadata = {
 export default function LandingPage() {
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-background text-foreground">
+      <ScrollReveal />
       <BackgroundDecor />
 
       {/* ─── Floating nav ─────────────────────────────────────────── */}
@@ -46,7 +48,7 @@ export default function LandingPage() {
         <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           {/* Copy */}
           <div className="text-center lg:text-left">
-            <div className="reveal reveal-1 inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-muted backdrop-blur">
+            <div className="reveal-on-scroll inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-muted backdrop-blur">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold opacity-60" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-gold" />
@@ -54,20 +56,20 @@ export default function LandingPage() {
               Multi-model treasury · live metering
             </div>
 
-            <h1 className="reveal reveal-2 mt-6 text-balance text-5xl font-bold leading-[1.04] tracking-tight sm:text-6xl">
+            <h1 className="reveal-on-scroll reveal-d1 mt-6 text-balance text-5xl font-bold leading-[1.04] tracking-tight sm:text-6xl">
               AI spend,
               <br />
               <span className="gold-text">under control.</span>
             </h1>
 
-            <p className="reveal reveal-3 mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-muted lg:mx-0">
+            <p className="reveal-on-scroll reveal-d2 mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-muted lg:mx-0">
               Tokeville turns AI usage into a currency you actually govern. Fund a
               central treasury, allocate token budgets across teams and projects, and
               meter every model call in real time — across every provider, through one
               interface.
             </p>
 
-            <div className="reveal reveal-4 mt-8 flex flex-col items-center gap-3 sm:flex-row lg:items-start lg:justify-start">
+            <div className="reveal-on-scroll reveal-d3 mt-8 flex flex-col items-center gap-3 sm:flex-row lg:items-start lg:justify-start">
               <Link
                 href="/login"
                 className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gold-bright to-gold px-7 text-sm font-bold text-[#0a0a0b] shadow-[0_2px_24px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep sm:w-auto"
@@ -83,7 +85,7 @@ export default function LandingPage() {
               </a>
             </div>
 
-            <dl className="reveal reveal-5 mt-10 grid max-w-md grid-cols-3 gap-6 border-t border-border pt-6 lg:mx-0">
+            <dl className="reveal-on-scroll reveal-d4 mt-10 grid max-w-md grid-cols-3 gap-6 border-t border-border pt-6 lg:mx-0">
               {[
                 ["$10", "per 1M tokens"],
                 ["4+", "providers, one view"],
@@ -98,7 +100,7 @@ export default function LandingPage() {
           </div>
 
           {/* Product mockup */}
-          <div className="reveal reveal-3 relative lg:pl-4">
+          <div className="reveal-on-scroll reveal-d2 relative lg:pl-4">
             <TreasuryMockup />
           </div>
         </div>
@@ -120,7 +122,7 @@ export default function LandingPage() {
 
       {/* ─── Bento feature grid ───────────────────────────────────── */}
       <section id="features" className="mx-auto max-w-6xl px-5 py-20">
-        <div className="mx-auto max-w-2xl text-center">
+        <div className="reveal-on-scroll mx-auto max-w-2xl text-center">
           <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
             A treasury desk for your AI budget
           </h2>
@@ -176,7 +178,7 @@ export default function LandingPage() {
 
       {/* ─── How it works ─────────────────────────────────────────── */}
       <section id="how" className="mx-auto max-w-6xl px-5 py-20">
-        <div className="mx-auto max-w-2xl text-center">
+        <div className="reveal-on-scroll mx-auto max-w-2xl text-center">
           <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
             From dollars to deployed, in three moves
           </h2>
@@ -201,7 +203,7 @@ export default function LandingPage() {
           ].map((s, i) => (
             <div
               key={s.n}
-              className="relative rounded-2xl border border-border bg-surface/60 p-6 backdrop-blur"
+              className={`reveal-on-scroll reveal-d${i + 1} relative rounded-2xl border border-border bg-surface/60 p-6 backdrop-blur`}
             >
               <span className="tnum gold-text font-mono text-sm font-bold">{s.n}</span>
               <h3 className="mt-3 text-lg font-semibold tracking-tight">{s.t}</h3>
@@ -216,7 +218,7 @@ export default function LandingPage() {
 
       {/* ─── Security band ────────────────────────────────────────── */}
       <section id="security" className="mx-auto max-w-6xl px-5 py-20">
-        <div className="gold-border relative overflow-hidden rounded-3xl border border-border bg-surface/70 p-8 backdrop-blur sm:p-12">
+        <div className="reveal-on-scroll gold-border relative overflow-hidden rounded-3xl border border-border bg-surface/70 p-8 backdrop-blur sm:p-12">
           <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-center">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-gold">
@@ -257,13 +259,13 @@ export default function LandingPage() {
 
       {/* ─── Final CTA ────────────────────────────────────────────── */}
       <section className="mx-auto max-w-4xl px-5 pb-24 pt-6">
-        <div className="relative overflow-hidden rounded-3xl border border-gold/25 bg-gradient-to-b from-surface to-background p-10 text-center sm:p-14">
+        <div className="reveal-on-scroll relative overflow-hidden rounded-3xl border border-gold/25 bg-gradient-to-b from-surface to-background p-10 text-center sm:p-14">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-x-0 -top-24 mx-auto h-48 w-[36rem] max-w-full rounded-full"
             style={{ background: "radial-gradient(closest-side, var(--gold-soft), transparent)" }}
           />
-          <TokevilleMark className="mx-auto h-11 w-11 float-soft" />
+          <TokevilleMark className="mx-auto h-11 w-11" />
           <h2 className="mt-6 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
             Put your AI budget on a balance sheet
           </h2>
@@ -352,7 +354,7 @@ function TreasuryMockup() {
     .join(" ");
 
   return (
-    <div className="float-soft gold-border relative rounded-3xl border border-border bg-surface/80 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+    <div className="gold-border relative rounded-3xl border border-border bg-surface/80 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] backdrop-blur-xl">
       <div className="gold-edge rounded-3xl">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -449,7 +451,7 @@ function AllocationViz() {
 function BentoCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-border bg-surface/60 p-6 backdrop-blur transition-colors duration-200 hover:border-gold/30 ${className}`}
+      className={`reveal-on-scroll group relative overflow-hidden rounded-2xl border border-border bg-surface/60 p-6 backdrop-blur hover:border-gold/30 ${className}`}
     >
       {children}
     </div>
