@@ -17,7 +17,7 @@ function genKey() {
   const hex = Array.from({ length: 24 }, () =>
     Math.floor(Math.random() * 16).toString(16),
   ).join("");
-  return `sk_live_${hex}`;
+  return `tok_live_${hex}`;
 }
 
 function mask(token: string) {
@@ -31,14 +31,14 @@ export default function CardsPage() {
     {
       id: "k1",
       name: "Production key",
-      token: "sk_live_8f2a1c9b4e7d6a3f1029bce4",
+      token: "tok_live_8f2a1c9b4e7d6a3f1029bce4",
       created: "Created Jun 12, 2026",
       revealed: false,
     },
     {
       id: "k2",
       name: "Staging key",
-      token: "sk_live_2b7e4419ac0d83f5e61790ab",
+      token: "tok_live_2b7e4419ac0d83f5e61790ab",
       created: "Created May 28, 2026",
       revealed: false,
     },
