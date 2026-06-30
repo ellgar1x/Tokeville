@@ -173,8 +173,13 @@ State: a server component loads data via `lib/db.ts` and passes it to a client s
 **Real AI chat (Anthropic)**
 - `/chat` (admin) and on `/member`. Routes through Tokeville's own Anthropic key
   **server-side only** — users never connect their own Claude accounts (nothing to steal).
-- Meters the **exact** `input + output` tokens from the API response, deducts from the chosen
-  sub-account, logs a generic `Chat · <model>` ledger entry, and shows per-message usage.
+- **Streams** the reply token-by-token (SSE: `delta` events then a final `done` event).
+  `src/lib/chatStream.ts` consumes it; both ChatPanel and ChatWorkspace render incrementally.
+- **Pre-flight balance gate**: if the chosen sub-account's remaining budget ≤ 0, returns 402
+  with a "top up" message before any AI call.
+- Computes the **exact USD cost** from the model's `inputPer1M`/`outputPer1M`, converts to TOK
+  at the treasury rate (`tokensFromUsd`), deducts that from the sub-account via `use_tokens`,
+  and logs a `Chat · <model>` ledger entry. The realtime subscription updates balances live.
 - **Privacy: only token counts are persisted — message content is never written to the DB.**
 - Requires `ANTHROPIC_API_KEY` to be set (currently empty → chat returns a "not configured"
   notice until a key is added).

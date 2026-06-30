@@ -3,8 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@/lib/supabase/server";
-import { findModel } from "@/lib/models";
+import { findModel, type ModelDef, type ProviderDef } from "@/lib/models";
 import { decryptSecret } from "@/lib/crypto";
+import { tokensFromUsd } from "@/lib/format";
 
 const MAX_MESSAGES = 50;
 const MAX_MESSAGE_CHARS = 50_000;
@@ -21,17 +22,24 @@ interface ChatBody {
   systemPrompt?: string;
 }
 
+/** Mutable usage accumulator filled by the provider streamers. */
+interface Usage {
+  input: number;
+  output: number;
+}
+
+const DEFAULT_SYSTEM =
+  "You are a helpful assistant accessed through Tokeville, an AI spend-management platform. Be clear and concise.";
+
 /** Fetch the API key (and optional base URL) for a provider from the DB. */
 async function getProviderKey(
   supabase: Awaited<ReturnType<typeof createClient>>,
   workspaceId: string,
   provider: string,
 ): Promise<{ apiKey: string; baseUrl?: string | null } | null> {
-  // For Anthropic, also fall back to the env key so existing deployments keep working.
   if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
     return { apiKey: process.env.ANTHROPIC_API_KEY };
   }
-
   const { data } = await supabase
     .from("provider_api_keys")
     .select("api_key, base_url")
@@ -39,21 +47,20 @@ async function getProviderKey(
     .eq("provider", provider)
     .limit(1)
     .single();
-
   if (!data) return null;
   return { apiKey: decryptSecret(data.api_key), baseUrl: data.base_url };
 }
 
-const DEFAULT_SYSTEM = "You are a helpful assistant accessed through Tokeville, an AI spend-management platform. Be clear and concise.";
-
-async function callAnthropic(
+/** Stream text deltas from Anthropic, recording exact token usage as it arrives. */
+async function* streamAnthropic(
   apiKey: string,
   model: string,
   messages: ChatMessage[],
-  systemPrompt?: string,
-): Promise<{ reply: string; inputTokens: number; outputTokens: number }> {
+  systemPrompt: string | undefined,
+  usage: Usage,
+): AsyncGenerator<string> {
   const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
+  const stream = await client.messages.create({
     model,
     max_tokens: 4096,
     system: systemPrompt ?? DEFAULT_SYSTEM,
@@ -61,68 +68,99 @@ async function callAnthropic(
       role: m.role === "assistant" ? "assistant" : "user",
       content: String(m.content),
     })),
+    stream: true,
   });
-  const reply = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-  return { reply, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens };
+  for await (const event of stream) {
+    if (event.type === "message_start") {
+      usage.input = event.message.usage.input_tokens;
+    } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    } else if (event.type === "message_delta") {
+      usage.output = event.usage.output_tokens;
+    }
+  }
 }
 
-async function callOpenAI(
+/** Stream text deltas from an OpenAI-compatible endpoint. */
+async function* streamOpenAI(
   apiKey: string,
   baseUrl: string | null | undefined,
   model: string,
   messages: ChatMessage[],
-  systemPrompt?: string,
-): Promise<{ reply: string; inputTokens: number; outputTokens: number }> {
+  systemPrompt: string | undefined,
+  usage: Usage,
+): AsyncGenerator<string> {
   const client = new OpenAI({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
-
-  // o1/o3 reasoning models don't support system messages
   const isReasoning = model.startsWith("o1") || model.startsWith("o3");
   const oaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    ...(!isReasoning
-      ? [{ role: "system" as const, content: systemPrompt ?? DEFAULT_SYSTEM }]
-      : []),
-    ...messages.slice(-20).map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: String(m.content),
-    })),
+    ...(!isReasoning ? [{ role: "system" as const, content: systemPrompt ?? DEFAULT_SYSTEM }] : []),
+    ...messages.slice(-20).map((m) => ({ role: m.role as "user" | "assistant", content: String(m.content) })),
   ];
 
-  const response = await client.chat.completions.create({
+  // Some reasoning models don't support streaming — fall back to a single chunk.
+  if (isReasoning) {
+    const res = await client.chat.completions.create({ model, messages: oaiMessages, max_completion_tokens: 4096 });
+    usage.input = res.usage?.prompt_tokens ?? 0;
+    usage.output = res.usage?.completion_tokens ?? 0;
+    yield res.choices[0]?.message?.content ?? "";
+    return;
+  }
+
+  const stream = await client.chat.completions.create({
     model,
     messages: oaiMessages,
     max_completion_tokens: 4096,
+    stream: true,
+    stream_options: { include_usage: true },
   });
-
-  const reply = response.choices[0]?.message?.content ?? "";
-  const inputTokens = response.usage?.prompt_tokens ?? 0;
-  const outputTokens = response.usage?.completion_tokens ?? 0;
-  return { reply, inputTokens, outputTokens };
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) yield delta;
+    if (chunk.usage) {
+      usage.input = chunk.usage.prompt_tokens;
+      usage.output = chunk.usage.completion_tokens;
+    }
+  }
 }
 
-async function callGoogle(
+/** Stream text deltas from Google Gemini. */
+async function* streamGoogle(
   apiKey: string,
   model: string,
   messages: ChatMessage[],
-  systemPrompt?: string,
-): Promise<{ reply: string; inputTokens: number; outputTokens: number }> {
+  systemPrompt: string | undefined,
+  usage: Usage,
+): AsyncGenerator<string> {
   const client = new GoogleGenerativeAI(apiKey);
-  const genModel = client.getGenerativeModel({
-    model,
-    systemInstruction: systemPrompt ?? DEFAULT_SYSTEM,
-  });
-
+  const genModel = client.getGenerativeModel({ model, systemInstruction: systemPrompt ?? DEFAULT_SYSTEM });
   const history = messages.slice(0, -1).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
-  const lastMessage = messages[messages.length - 1];
-
+  const last = messages[messages.length - 1];
   const chat = genModel.startChat({ history });
-  const result = await chat.sendMessage(lastMessage.content);
-  const reply = result.response.text();
-  const inputTokens = result.response.usageMetadata?.promptTokenCount ?? 0;
-  const outputTokens = result.response.usageMetadata?.candidatesTokenCount ?? 0;
-  return { reply, inputTokens, outputTokens };
+  const result = await chat.sendMessageStream(last.content);
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+  const final = await result.response;
+  usage.input = final.usageMetadata?.promptTokenCount ?? 0;
+  usage.output = final.usageMetadata?.candidatesTokenCount ?? 0;
+}
+
+function runStream(
+  provider: ProviderDef,
+  creds: { apiKey: string; baseUrl?: string | null },
+  apiModel: string,
+  messages: ChatMessage[],
+  systemPrompt: string | undefined,
+  usage: Usage,
+): AsyncGenerator<string> {
+  if (provider.key === "anthropic") return streamAnthropic(creds.apiKey, apiModel, messages, systemPrompt, usage);
+  if (provider.key === "openai" || provider.key === "custom")
+    return streamOpenAI(creds.apiKey, creds.baseUrl, apiModel, messages, systemPrompt, usage);
+  return streamGoogle(creds.apiKey, apiModel, messages, systemPrompt, usage);
 }
 
 export async function POST(request: Request) {
@@ -147,11 +185,8 @@ export async function POST(request: Request) {
 
   const { subAccountId, model, messages, systemPrompt: reqSystemPrompt } = body;
   if (!subAccountId || !model || !Array.isArray(messages) || messages.length === 0) {
-    console.error("[chat] Missing required fields", { subAccountId: !!subAccountId, model, messageCount: messages?.length });
     return NextResponse.json({ error: "Missing subAccountId, model, or messages" }, { status: 400 });
   }
-
-  // Enforce payload bounds before any external calls
   if (messages.length > MAX_MESSAGES) {
     return NextResponse.json({ error: `Too many messages (max ${MAX_MESSAGES})` }, { status: 400 });
   }
@@ -161,76 +196,94 @@ export async function POST(request: Request) {
     }
   }
 
-  // Validate subAccountId belongs to caller's workspace BEFORE incurring any AI cost
-  const { data: accountCheck, error: accountErr } = await supabase
+  // Validate ownership AND check the balance BEFORE incurring any AI cost. RLS scopes
+  // this to the caller's workspace, so a foreign sub-account simply isn't found.
+  const { data: account, error: accountErr } = await supabase
     .from("sub_accounts")
-    .select("id")
+    .select("id, token_budget, tokens_used")
     .eq("id", subAccountId)
     .single();
 
-  if (accountErr || !accountCheck) {
-    console.error("[chat] Sub-account not found or not accessible", { subAccountId, userId: user.id, err: accountErr?.message });
+  if (accountErr || !account) {
+    console.error("[chat] Sub-account not found", { subAccountId, userId: user.id, err: accountErr?.message });
     return NextResponse.json({ error: "Sub-account not found in your workspace" }, { status: 403 });
+  }
+
+  const remaining = Number(account.token_budget) - Number(account.tokens_used);
+  if (remaining <= 0) {
+    console.error("[chat] Insufficient balance", { subAccountId, remaining });
+    return NextResponse.json(
+      { error: "Insufficient balance on this budget. Please top up your wallet to keep chatting." },
+      { status: 402 },
+    );
   }
 
   const found = findModel(model);
   if (!found) {
-    console.error("[chat] Unknown model requested", { model });
     return NextResponse.json({ error: `Unknown model: ${model}` }, { status: 400 });
   }
-
-  const { provider, model: modelDef } = found;
-  // Use the real API model ID (virtual entries like "claude-code" map to a real model)
+  const { provider, model: modelDef } = found as { provider: ProviderDef; model: ModelDef };
   const apiModel = modelDef.apiModelId ?? model;
-  // System prompt: request overrides model default, which overrides the global default
   const systemPrompt = reqSystemPrompt ?? modelDef.systemPrompt;
 
   const creds = await getProviderKey(supabase, workspaceId, provider.key);
   if (!creds) {
-    console.error("[chat] No API key for provider", { provider: provider.key, workspaceId });
     return NextResponse.json(
       { error: `No API key configured for ${provider.label}. Add one in Settings → AI Providers.` },
       { status: 503 },
     );
   }
 
-  let reply = "";
-  let inputTokens = 0;
-  let outputTokens = 0;
+  const encoder = new TextEncoder();
+  const usage: Usage = { input: 0, output: 0 };
 
-  try {
-    if (provider.key === "anthropic") {
-      ({ reply, inputTokens, outputTokens } = await callAnthropic(creds.apiKey, apiModel, messages, systemPrompt));
-    } else if (provider.key === "openai" || provider.key === "custom") {
-      ({ reply, inputTokens, outputTokens } = await callOpenAI(creds.apiKey, creds.baseUrl, apiModel, messages, systemPrompt));
-    } else if (provider.key === "google") {
-      ({ reply, inputTokens, outputTokens } = await callGoogle(creds.apiKey, apiModel, messages, systemPrompt));
-    } else {
-      console.error("[chat] Unsupported provider", { provider: provider.key });
-      return NextResponse.json({ error: `Unsupported provider: ${provider.key}` }, { status: 400 });
-    }
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Request to AI provider failed";
-    console.error("[chat] AI provider call failed", { provider: provider.key, model: apiModel, error: message });
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      try {
+        for await (const text of runStream(provider, creds, apiModel, messages, systemPrompt, usage)) {
+          if (text) send({ type: "delta", text });
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Request to AI provider failed";
+        console.error("[chat] streaming failed", { provider: provider.key, model: apiModel, error: message });
+        send({ type: "error", error: message });
+        controller.close();
+        return;
+      }
 
-  const total = inputTokens + outputTokens;
-  const { error: rpcError } = await supabase.rpc("use_tokens", {
-    p_sub_account: subAccountId,
-    p_amount: total,
-    p_provider: provider.key,
-    p_detail: `Chat · ${modelDef.label}`,
+      // Exact cost using the model's published per-million input/output pricing,
+      // converted to TOK at the treasury rate, then deducted from the budget.
+      const costUsd =
+        (usage.input / 1_000_000) * modelDef.inputPer1M +
+        (usage.output / 1_000_000) * modelDef.outputPer1M;
+      const costTok = Math.max(1, Math.round(tokensFromUsd(costUsd)));
+
+      const { error: rpcError } = await supabase.rpc("use_tokens", {
+        p_sub_account: subAccountId,
+        p_amount: costTok,
+        p_provider: provider.key,
+        p_detail: `Chat · ${modelDef.label}`,
+      });
+      if (rpcError) {
+        console.error("[chat] use_tokens RPC failed", { subAccountId, costTok, error: rpcError.message });
+      }
+
+      send({
+        type: "done",
+        usage: { input: usage.input, output: usage.output, total: costTok, costUsd },
+        deducted: !rpcError,
+        deductError: rpcError?.message ?? null,
+      });
+      controller.close();
+    },
   });
 
-  if (rpcError) {
-    console.error("[chat] use_tokens RPC failed", { subAccountId, total, error: rpcError.message });
-  }
-
-  return NextResponse.json({
-    reply,
-    usage: { input: inputTokens, output: outputTokens, total },
-    deducted: !rpcError,
-    deductError: rpcError?.message ?? null,
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
   });
 }

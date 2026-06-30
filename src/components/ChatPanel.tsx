@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { tok } from "@/lib/format";
 import { CoinsIcon, SendIcon, ShieldIcon } from "./icons";
 import { PROVIDERS } from "@/lib/models";
+import { streamChat, type ChatUsage } from "@/lib/chatStream";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
-  usage?: { input: number; output: number; total: number };
+  usage?: ChatUsage;
 }
 
 // Flat list of all models with provider metadata for the selector
@@ -78,28 +79,40 @@ export function ChatPanel({
     setLoading(true);
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
 
+    // Append an empty assistant message that fills in as the stream arrives.
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    const setLast = (fn: (m: Msg) => Msg) =>
+      setMessages((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = fn(copy[copy.length - 1]);
+        return copy;
+      });
+
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await streamChat(
+        {
           subAccountId: accountId,
           model,
           messages: history.map((m) => ({ role: m.role, content: m.content })),
-        }),
+        },
+        {
+          onDelta: (text) => {
+            setLast((m) => ({ ...m, content: m.content + text }));
+            requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
+          },
+          onDone: (usage, _deducted, deductError) => {
+            setLast((m) => ({ ...m, usage }));
+            if (deductError) setError(`Reply delivered, but metering failed: ${deductError}`);
+          },
+        },
+      );
+    } catch (e) {
+      // Drop the empty assistant placeholder and surface the error (e.g. top-up).
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        return last && last.role === "assistant" && !last.content ? prev.slice(0, -1) : prev;
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Request failed");
-        return;
-      }
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply, usage: data.usage },
-      ]);
-      if (data.deductError) setError(`Reply delivered, but metering failed: ${data.deductError}`);
-    } catch {
-      setError("Network error. Please try again.");
+      setError(e instanceof Error ? e.message : "Network error. Please try again.");
     } finally {
       setLoading(false);
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));

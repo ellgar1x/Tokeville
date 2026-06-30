@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { tok } from "@/lib/format";
 import { CoinsIcon, PlusIcon, SendIcon, ShieldIcon, TrashIcon } from "./icons";
 import { PROVIDERS } from "@/lib/models";
+import { streamChat, type ChatUsage } from "@/lib/chatStream";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
-  usage?: { input: number; output: number; total: number };
+  usage?: ChatUsage;
 }
 
 interface Conversation {
@@ -147,35 +148,58 @@ export function ChatWorkspace({
     setLoading(true);
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
 
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subAccountId: active.accountId,
-          model: active.model,
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Request failed");
-        return;
-      }
+    const convId = active.id;
+    const reqAccount = active.accountId;
+    const reqModel = active.model;
+
+    // Append an empty assistant message to the active conversation, then stream into it.
+    setConvs((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? { ...c, messages: [...history, { role: "assistant", content: "" }], updatedAt: Date.now() }
+          : c,
+      ),
+    );
+    const setLastMessage = (fn: (m: Msg) => Msg) =>
       setConvs((prev) =>
-        prev.map((c) =>
-          c.id === active.id
-            ? {
-                ...c,
-                messages: [...history, { role: "assistant", content: data.reply, usage: data.usage }],
-                updatedAt: Date.now(),
-              }
-            : c,
-        ),
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          const msgs = [...c.messages];
+          msgs[msgs.length - 1] = fn(msgs[msgs.length - 1]);
+          return { ...c, messages: msgs, updatedAt: Date.now() };
+        }),
       );
-      if (data.deductError) setError(`Reply delivered, but metering failed: ${data.deductError}`);
-    } catch {
-      setError("Network error. Please try again.");
+
+    try {
+      await streamChat(
+        {
+          subAccountId: reqAccount,
+          model: reqModel,
+          messages: history.map((m) => ({ role: m.role, content: m.content })),
+        },
+        {
+          onDelta: (text) => {
+            setLastMessage((m) => ({ ...m, content: m.content + text }));
+            requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
+          },
+          onDone: (usage, _deducted, deductError) => {
+            setLastMessage((m) => ({ ...m, usage }));
+            if (deductError) setError(`Reply delivered, but metering failed: ${deductError}`);
+          },
+        },
+      );
+    } catch (e) {
+      // Remove the empty assistant placeholder and surface the error (e.g. top-up).
+      setConvs((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          const last = c.messages[c.messages.length - 1];
+          return last && last.role === "assistant" && !last.content
+            ? { ...c, messages: c.messages.slice(0, -1) }
+            : c;
+        }),
+      );
+      setError(e instanceof Error ? e.message : "Network error. Please try again.");
     } finally {
       setLoading(false);
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
