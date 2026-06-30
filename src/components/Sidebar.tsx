@@ -4,38 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useDemo } from "@/store/demo";
 import { tok } from "@/lib/format";
-import {
-  ActivityIcon,
-  CardIcon,
-  ChatIcon,
-  CoinsIcon,
-  ExchangeIcon,
-  PieIcon,
-  PlusIcon,
-  SettingsIcon,
-  TokevilleMark,
-  UsersIcon,
-} from "./icons";
-
-const nav = [
-  { label: "Treasury", href: "/", icon: WalletHome },
-  { label: "Deposit", href: "/deposit", icon: DepositIcon },
-  { label: "Chat", href: "/chat", icon: ChatIcon },
-  { label: "Spend", href: "/spend", icon: PieIcon },
-  { label: "Sub-accounts", href: "/sub-accounts", icon: UsersIcon },
-  { label: "Team", href: "/team", icon: UsersIcon },
-  { label: "Activity", href: "/activity", icon: ActivityIcon },
-  { label: "Exchange", href: "/exchange", icon: ExchangeIcon },
-  { label: "Cards & Keys", href: "/cards", icon: CardIcon },
-];
-
-function DepositIcon(props: React.SVGProps<SVGSVGElement>) {
-  return <PlusIcon {...props} />;
-}
-
-function WalletHome(props: React.SVGProps<SVGSVGElement>) {
-  return <CoinsIcon {...props} />;
-}
+import { CoinsIcon, SettingsIcon, TokevilleMark } from "./icons";
+import { NAV_ITEMS } from "./navItems";
 
 export function Sidebar() {
   const { state, unallocated } = useDemo();
@@ -56,7 +26,7 @@ export function Sidebar() {
           Workspace
         </p>
         <ul className="space-y-0.5">
-          {nav.map(({ label, href, icon: Icon }) => {
+          {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
               <li key={label}>

@@ -15,6 +15,7 @@ import {
   TokevilleMark,
 } from "./icons";
 import { ThemeToggle } from "./ThemeProvider";
+import { MobileNav } from "./MobileNav";
 
 const TITLES: Record<string, { title: string; sub: string }> = {
   "/": { title: "Treasury", sub: "June 2026 cycle · live balances" },
@@ -48,7 +49,8 @@ export function Topbar() {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-surface/80 px-5 backdrop-blur-md sm:px-8">
-      <div className="flex items-center gap-2 lg:hidden">
+      <div className="flex items-center gap-2.5 lg:hidden">
+        <MobileNav />
         <TokevilleMark className="h-7 w-7" />
       </div>
 
