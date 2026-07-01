@@ -69,8 +69,23 @@ and server layout read them without an extra query:
   never see the treasury balance, other sub-accounts, or alerts** — enforced by RLS, not
   just the UI.
 
-`src/proxy.ts` gates routes: unauthenticated → `/login`; members → `/member`; admins → away
-from `/member`; `/api/*` is exempt (route handlers do their own auth).
+`src/proxy.ts` gates routes: unauthenticated → `/login`; members → `/member`; institution
+admins → `/institution`; team admins → away from those; `/api/*` is exempt (route handlers do
+their own auth).
+
+### Two workspace types
+
+`workspaces.type` is `team` (default) or `institution`, mirrored into
+`app_metadata.workspace_type` so proxy + layout branch without a query. Chosen at admin
+sign-up, switchable anytime (`set_workspace_type` RPC).
+
+- **Team** — the metered model: pay *all* AI spend through Tokeville (deposit/buy tokens →
+  metered chat deducts per call). Tokeville earns via the per-transaction **platform fee**.
+- **Institution** — for orgs with their own/contracted (fixed-cost) AI. Admins budget & track
+  that spend by department in USD (`departments`, `spend_entries`, `record_spend` RPC → 80%
+  `budget_80` alerts); lives at `/institution`. Monetized by a **Stripe subscription**
+  ($99/mo, `mode:'subscription'` via `/api/stripe/subscribe`; the webhook sets
+  `workspaces.subscription_status`). The dashboard is paywall-gated until the sub is active.
 
 ---
 

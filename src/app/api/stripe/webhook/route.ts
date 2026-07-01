@@ -30,6 +30,51 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
+  // ─── Institutional subscription lifecycle ──────────────────────────────────
+  if (event.type === "checkout.session.completed" &&
+      (event.data.object as Stripe.Checkout.Session).mode === "subscription") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const workspaceId = session.metadata?.workspace_id;
+    if (!workspaceId) {
+      console.error("[stripe/webhook] Subscription session missing workspace_id", { sessionId: session.id });
+      return NextResponse.json({ error: "Missing metadata" }, { status: 400 });
+    }
+
+    // Approximate the first renewal date one month out (good enough for demo/test).
+    const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const supabase = createServiceClient();
+    const { error } = await supabase
+      .from("workspaces")
+      .update({
+        subscription_status: "active",
+        subscription_current_period_end: periodEnd,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : null,
+        stripe_subscription_id: typeof session.subscription === "string" ? session.subscription : null,
+      })
+      .eq("id", workspaceId);
+
+    if (error) {
+      console.error("[stripe/webhook] activate subscription failed", { workspaceId, error: error.message });
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    console.log("[stripe/webhook] Subscription activated", { workspaceId });
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === "customer.subscription.deleted") {
+    const sub = event.data.object as Stripe.Subscription;
+    const workspaceId = sub.metadata?.workspace_id;
+    if (workspaceId) {
+      const supabase = createServiceClient();
+      await supabase.from("workspaces")
+        .update({ subscription_status: "canceled" })
+        .eq("id", workspaceId);
+      console.log("[stripe/webhook] Subscription canceled", { workspaceId });
+    }
+    return NextResponse.json({ received: true });
+  }
+
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     const { workspace_id, token_amount, usd_cents } = session.metadata ?? {};

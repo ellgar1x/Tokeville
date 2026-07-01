@@ -23,6 +23,7 @@ export default function LandingPage() {
           </Link>
           <div className="hidden items-center gap-7 text-sm text-muted md:flex">
             <a href="#features" className="transition-colors hover:text-foreground">Features</a>
+            <a href="#plans" className="transition-colors hover:text-foreground">Plans</a>
             <a href="#how" className="transition-colors hover:text-foreground">How it works</a>
             <a href="#security" className="transition-colors hover:text-foreground">Security</a>
           </div>
@@ -173,6 +174,91 @@ export default function LandingPage() {
               Budget-raise requests flow to admins and resolve — allocations included — live.
             </p>
           </BentoCard>
+        </div>
+      </section>
+
+      {/* ─── Plans ────────────────────────────────────────────────── */}
+      <section id="plans" className="mx-auto max-w-6xl px-5 py-20">
+        <div className="reveal-on-scroll mx-auto max-w-2xl text-center">
+          <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
+            Two ways to use Tokeville
+          </h2>
+          <p className="mt-4 text-pretty text-muted">
+            Pick the model that matches how your organization pays for AI.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-5 md:grid-cols-2">
+          {/* Team */}
+          <div className="reveal-on-scroll gold-border relative flex flex-col rounded-3xl border border-border bg-surface/70 p-7 backdrop-blur">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold tracking-tight">Team</h3>
+              <span className="rounded-full border border-gold/30 bg-gold-soft px-2.5 py-1 text-[11px] font-medium text-gold">
+                Most popular
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              For teams with constant API bills. Tokeville becomes the single platform you pay
+              <strong className="text-foreground"> all</strong> your AI through — deposit funds, budget them across
+              teams, and meter every model call in real time.
+            </p>
+            <div className="mt-5 flex items-baseline gap-1.5">
+              <span className="tnum gold-text font-mono text-3xl font-bold">Pay-as-you-go</span>
+            </div>
+            <p className="mt-1 text-xs text-subtle">A small platform fee per transaction — no subscription.</p>
+            <ul className="mt-5 space-y-2 text-sm">
+              {[
+                "Deposit / buy tokens, spend across every provider",
+                "Per-team & per-project budgets with live metering",
+                "Automatic top-ups and low-balance alerts",
+                "One chat interface for Claude, GPT, Gemini & more",
+              ].map((f) => (
+                <li key={f} className="flex items-start gap-2.5 text-muted">
+                  <CheckGlyph className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/login"
+              className="mt-7 inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-b from-gold-bright to-gold text-sm font-bold text-[#0a0a0b] shadow-[0_1px_12px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
+            >
+              Start a Team workspace
+            </Link>
+          </div>
+
+          {/* Institutional */}
+          <div className="reveal-on-scroll relative flex flex-col rounded-3xl border border-border bg-surface/60 p-7 backdrop-blur">
+            <h3 className="text-lg font-semibold tracking-tight">Institutional</h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              For organizations running their own or <strong className="text-foreground">contracted</strong> AI —
+              fixed-cost models, not constant API spend. Budget and track that spend by department, all in one console.
+            </p>
+            <div className="mt-5 flex items-baseline gap-1.5">
+              <span className="tnum gold-text font-mono text-3xl font-bold">$99</span>
+              <span className="text-sm text-subtle">/ month</span>
+            </div>
+            <p className="mt-1 text-xs text-subtle">Flat subscription — unlimited departments & spend logging.</p>
+            <ul className="mt-5 space-y-2 text-sm">
+              {[
+                "Consolidated USD dashboard across all AI tools",
+                "Monthly budgets per department or team",
+                "Log spend manually or import via CSV",
+                "Automatic alerts at 80% of any budget",
+              ].map((f) => (
+                <li key={f} className="flex items-start gap-2.5 text-muted">
+                  <CheckGlyph className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Link
+              href="/login"
+              className="mt-7 inline-flex h-11 items-center justify-center rounded-xl border border-border-strong bg-surface px-6 text-sm font-semibold text-foreground transition-colors duration-200 hover:border-gold/40 hover:text-gold"
+            >
+              Start an Institutional workspace
+            </Link>
+          </div>
         </div>
       </section>
 
