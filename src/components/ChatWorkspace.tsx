@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { tok } from "@/lib/format";
 import { CoinsIcon, PlusIcon, SendIcon, ShieldIcon, TrashIcon } from "./icons";
 import { PROVIDERS } from "@/lib/models";
@@ -79,6 +80,7 @@ export function ChatWorkspace({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsTopUp, setNeedsTopUp] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -139,6 +141,7 @@ export function ChatWorkspace({
     const text = input.trim();
     if (!text || loading || !active?.accountId) return;
     setError(null);
+    setNeedsTopUp(false);
 
     const history: Msg[] = [...(active.messages), { role: "user", content: text }];
 
@@ -202,7 +205,13 @@ export function ChatWorkspace({
             : c;
         }),
       );
-      setError(e instanceof Error ? e.message : "Network error. Please try again.");
+      const status = (e as { status?: number })?.status;
+      if (status === 402) {
+        setNeedsTopUp(true);
+        setError(null);
+      } else {
+        setError(e instanceof Error ? e.message : "Network error. Please try again.");
+      }
     } finally {
       setLoading(false);
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
@@ -392,6 +401,29 @@ export function ChatWorkspace({
             </div>
           )}
         </div>
+
+        {needsTopUp && (
+          <div className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold/30 bg-gold-soft px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gold/15 text-gold">
+                <CoinsIcon className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-gold">Insufficient balance</p>
+                <p className="text-xs text-muted">
+                  This budget is out of tokens. Top up your wallet to keep chatting.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/deposit"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Deposit funds
+            </Link>
+          </div>
+        )}
 
         {error && (
           <p className="mx-4 mb-1 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{error}</p>

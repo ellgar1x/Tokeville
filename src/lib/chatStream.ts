@@ -38,7 +38,9 @@ export async function streamChat(body: unknown, handlers: StreamHandlers): Promi
     } catch {
       /* keep default */
     }
-    throw new Error(msg);
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status; // 402 = insufficient balance / needs top-up
+    throw err;
   }
 
   const reader = res.body.getReader();
