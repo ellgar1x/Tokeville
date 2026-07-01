@@ -31,6 +31,7 @@ export default function ChatPage() {
         accounts={state.accounts.map((a) => ({ id: a.id, name: a.name }))}
         availableProviders={availableProviders}
         storageKey="admin"
+        allowPersonal
       />
     </div>
   );

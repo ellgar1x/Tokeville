@@ -196,26 +196,46 @@ export async function POST(request: Request) {
     }
   }
 
-  // Validate ownership AND check the balance BEFORE incurring any AI cost. RLS scopes
-  // this to the caller's workspace, so a foreign sub-account simply isn't found.
-  const { data: account, error: accountErr } = await supabase
-    .from("sub_accounts")
-    .select("id, token_budget, tokens_used")
-    .eq("id", subAccountId)
-    .single();
+  // "personal" bills straight to the treasury's unallocated funds (no project).
+  const isPersonal = subAccountId === "personal";
 
-  if (accountErr || !account) {
-    console.error("[chat] Sub-account not found", { subAccountId, userId: user.id, err: accountErr?.message });
-    return NextResponse.json({ error: "Sub-account not found in your workspace" }, { status: 403 });
-  }
+  if (isPersonal) {
+    // Check there's unallocated treasury BEFORE incurring any AI cost.
+    const [{ data: wallet }, { data: accts }] = await Promise.all([
+      supabase.from("wallets").select("balance_tokens").single(),
+      supabase.from("sub_accounts").select("token_budget"),
+    ]);
+    const balance = Number(wallet?.balance_tokens ?? 0);
+    const allocated = (accts ?? []).reduce((s, a) => s + Number(a.token_budget), 0);
+    if (balance - allocated <= 0) {
+      console.error("[chat] No unallocated treasury for personal chat", { workspaceId, balance, allocated });
+      return NextResponse.json(
+        { error: "No unallocated treasury left. Top up your wallet or free up an allocation to keep chatting." },
+        { status: 402 },
+      );
+    }
+  } else {
+    // Validate ownership AND check the balance BEFORE incurring any AI cost. RLS scopes
+    // this to the caller's workspace, so a foreign sub-account simply isn't found.
+    const { data: account, error: accountErr } = await supabase
+      .from("sub_accounts")
+      .select("id, token_budget, tokens_used")
+      .eq("id", subAccountId)
+      .single();
 
-  const remaining = Number(account.token_budget) - Number(account.tokens_used);
-  if (remaining <= 0) {
-    console.error("[chat] Insufficient balance", { subAccountId, remaining });
-    return NextResponse.json(
-      { error: "Insufficient balance on this budget. Please top up your wallet to keep chatting." },
-      { status: 402 },
-    );
+    if (accountErr || !account) {
+      console.error("[chat] Sub-account not found", { subAccountId, userId: user.id, err: accountErr?.message });
+      return NextResponse.json({ error: "Sub-account not found in your workspace" }, { status: 403 });
+    }
+
+    const remaining = Number(account.token_budget) - Number(account.tokens_used);
+    if (remaining <= 0) {
+      console.error("[chat] Insufficient balance", { subAccountId, remaining });
+      return NextResponse.json(
+        { error: "Insufficient balance on this budget. Please top up your wallet to keep chatting." },
+        { status: 402 },
+      );
+    }
   }
 
   const found = findModel(model);
@@ -259,14 +279,21 @@ export async function POST(request: Request) {
         (usage.output / 1_000_000) * modelDef.outputPer1M;
       const costTok = Math.max(1, Math.round(tokensFromUsd(costUsd)));
 
-      const { error: rpcError } = await supabase.rpc("use_tokens", {
-        p_sub_account: subAccountId,
-        p_amount: costTok,
-        p_provider: provider.key,
-        p_detail: `Chat · ${modelDef.label}`,
-      });
+      const { error: rpcError } = isPersonal
+        ? await supabase.rpc("use_tokens_personal", {
+            p_workspace_id: workspaceId,
+            p_amount: costTok,
+            p_provider: provider.key,
+            p_detail: `Personal · ${modelDef.label}`,
+          })
+        : await supabase.rpc("use_tokens", {
+            p_sub_account: subAccountId,
+            p_amount: costTok,
+            p_provider: provider.key,
+            p_detail: `Chat · ${modelDef.label}`,
+          });
       if (rpcError) {
-        console.error("[chat] use_tokens RPC failed", { subAccountId, costTok, error: rpcError.message });
+        console.error("[chat] token deduction RPC failed", { subAccountId, costTok, isPersonal, error: rpcError.message });
       }
 
       send({

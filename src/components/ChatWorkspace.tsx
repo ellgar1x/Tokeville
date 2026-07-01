@@ -53,13 +53,15 @@ export function ChatWorkspace({
   accounts,
   availableProviders,
   storageKey,
+  allowPersonal = false,
 }: {
   accounts: { id: string; name: string }[];
   availableProviders?: string[];
   storageKey: string;
+  allowPersonal?: boolean;
 }) {
   const lsKey = `tokeville-workspace-${storageKey}`;
-  const defaultAccountId = accounts[0]?.id ?? "";
+  const defaultAccountId = accounts[0]?.id ?? (allowPersonal ? "personal" : "");
 
   const [convs, setConvs] = useState<Conversation[]>(() => {
     if (typeof window === "undefined") return [];
@@ -320,6 +322,9 @@ export function ChatWorkspace({
               onChange={(e) => updateActive({ accountId: e.target.value })}
               className={selectClass}
             >
+              {allowPersonal && (
+                <option value="personal">Bill: Personal · treasury</option>
+              )}
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>Bill: {a.name}</option>
               ))}
