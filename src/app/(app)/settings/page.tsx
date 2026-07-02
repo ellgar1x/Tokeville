@@ -29,6 +29,8 @@ export default function SettingsPage() {
   const [secondaryColor, setSecondaryColor] = useState(state.workspace.secondaryColor ?? "#c79a45");
   const [savingColors, setSavingColors] = useState(false);
 
+  const isDemoAccount = state.profile.email?.toLowerCase() === "elliot@thegarcias.us";
+
   const [confirmConvert, setConfirmConvert] = useState(false);
   const [converting, setConverting] = useState(false);
 
@@ -257,12 +259,16 @@ export default function SettingsPage() {
         <div className="mt-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Reset demo data</p>
-              <p className="text-xs text-subtle">Restore the treasury, accounts, and ledger to their seeded state</p>
+              <p className="text-sm font-medium">{isDemoAccount ? "Reset demo data" : "Clear workspace"}</p>
+              <p className="text-xs text-subtle">
+                {isDemoAccount
+                  ? "Restore the treasury, accounts, and ledger to their seeded state"
+                  : "Wipe the treasury, sub-accounts, providers, and ledger back to empty (zero balance)"}
+              </p>
             </div>
             <button onClick={async () => { setResetting(true); await resetData(); }} disabled={resetting}
               className="h-9 rounded-lg border border-border-strong bg-surface-2 px-4 text-sm font-medium text-foreground transition-colors duration-200 hover:border-danger/40 hover:text-danger disabled:opacity-50 cursor-pointer">
-              {resetting ? "Resetting…" : "Reset data"}
+              {resetting ? (isDemoAccount ? "Resetting…" : "Clearing…") : (isDemoAccount ? "Reset data" : "Clear data")}
             </button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
