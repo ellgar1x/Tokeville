@@ -144,7 +144,15 @@ has demo); **cross-tenant key-leak fix** (removed shared platform-key fallback).
    the key UI lives in admin Settings (`/member` has no keys panel). Easy follow-up if wanted.
 5. **Anthropic admin cost sync** was explored and dropped — the user's plan has no admin key.
    Rate card + manual reconcile is the chosen path.
-6. **RPC grants locked down (2026-07-02)** — `mint_tokens`, `init_empty_workspace`, and
+7. **Chat-history cross-tenant leak fixed (2026-07-02)** — `ChatWorkspace` saved
+   conversations to `localStorage` under constant keys `tokeville-workspace-admin` /
+   `-member` (no tenant id), so any admin/member on the same browser saw each other's
+   chat history *including message content* (which is deliberately never stored server-
+   side). Now scoped: admin → `admin-<workspaceId>`, member → `member-<userId>`
+   (`workspaceId` exposed on `useDemo`, `userId` on `useMember`). ChatWorkspace also
+   purges the legacy un-scoped keys on mount. `ChatPanel` is dead code (no call sites).
+   LESSON: any client-side persistence (localStorage/IndexedDB) must include a tenant id.
+8. **RPC grants locked down (2026-07-02)** — `mint_tokens`, `init_empty_workspace`, and
    `seed_institution_data` had NO internal auth check yet were executable by `anon` +
    `authenticated` via PostgREST (unlimited free minting / workspace wipe). Migrations
    `lock_down_privileged_rpcs` + `revoke_public_execute_on_mutation_rpcs` revoked them
