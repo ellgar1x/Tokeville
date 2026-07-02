@@ -76,6 +76,11 @@ export function AIProviderSettings() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBudget, setEditBudget] = useState("");
+  const [editRemaining, setEditRemaining] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/provider-keys")
@@ -120,6 +125,31 @@ export function AIProviderSettings() {
     await fetch(`/api/provider-keys?id=${id}`, { method: "DELETE" });
     setKeys((prev) => prev.filter((k) => k.id !== id));
     setDeleting(null);
+  }
+
+  function openEdit(k: StoredKey) {
+    setEditingId(k.id);
+    setEditError(null);
+    setEditBudget(k.budget_tokens != null ? String(usdFromTokens(k.budget_tokens)) : "");
+    setEditRemaining("");
+  }
+
+  async function saveEdit(id: string) {
+    setEditError(null);
+    setSavingEdit(true);
+    const body: { id: string; budgetUsd?: number | null; remainingUsd?: number } = { id };
+    body.budgetUsd = editBudget ? parseFloat(editBudget) : null;
+    if (editRemaining.trim()) body.remainingUsd = parseFloat(editRemaining);
+    const res = await fetch("/api/provider-keys", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    setSavingEdit(false);
+    if (!res.ok) { setEditError(data.error ?? "Could not save"); return; }
+    setKeys((prev) => prev.map((k) => (k.id === id ? data.key : k)));
+    setEditingId(null);
   }
 
   const inputClass =
@@ -305,7 +335,13 @@ export function AIProviderSettings() {
                         {" · "}added {new Date(k.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <span className="font-mono text-xs text-subtle">sk-••••••••</span>
+                    <span className="hidden font-mono text-xs text-subtle sm:inline">sk-••••••••</span>
+                    <button
+                      onClick={() => (editingId === k.id ? setEditingId(null) : openEdit(k))}
+                      className="shrink-0 rounded px-2 py-1 text-xs text-muted opacity-70 transition-opacity hover:opacity-100 hover:text-gold cursor-pointer"
+                    >
+                      {editingId === k.id ? "Close" : "Edit"}
+                    </button>
                     <button
                       onClick={() => deleteKey(k.id)}
                       disabled={deleting === k.id}
@@ -337,6 +373,59 @@ export function AIProviderSettings() {
                       </p>
                     )}
                   </div>
+
+                  {/* Edit budget + reconcile to actual provider balance */}
+                  {editingId === k.id && (
+                    <div className="mt-3 rounded-lg border border-border-strong bg-surface p-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-subtle">Monthly budget (USD)</label>
+                          <div className="relative">
+                            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-subtle">$</span>
+                            <input
+                              value={editBudget}
+                              onChange={(e) => setEditBudget(e.target.value.replace(/[^0-9.]/g, ""))}
+                              placeholder="No cap"
+                              inputMode="decimal"
+                              className="h-9 w-full rounded-lg border border-border-strong bg-surface-2 pl-6 pr-2 font-mono text-sm outline-none focus:border-gold/50"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-medium text-subtle">Balance remaining now (USD)</label>
+                          <div className="relative">
+                            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-subtle">$</span>
+                            <input
+                              value={editRemaining}
+                              onChange={(e) => setEditRemaining(e.target.value.replace(/[^0-9.]/g, ""))}
+                              placeholder="from provider dashboard"
+                              inputMode="decimal"
+                              className="h-9 w-full rounded-lg border border-border-strong bg-surface-2 pl-6 pr-2 font-mono text-sm outline-none focus:border-gold/50"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[11px] text-subtle">
+                        Reconcile: enter the balance your provider dashboard shows and Tokeville will sync this key’s spend to match.
+                      </p>
+                      {editError && <p className="mt-2 text-[11px] font-medium text-danger">{editError}</p>}
+                      <div className="mt-2.5 flex gap-2">
+                        <button
+                          onClick={() => saveEdit(k.id)}
+                          disabled={savingEdit}
+                          className="inline-flex h-8 items-center rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3 text-xs font-semibold text-[#0a0a0b] transition-all hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer"
+                        >
+                          {savingEdit ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-2 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               );
             })}

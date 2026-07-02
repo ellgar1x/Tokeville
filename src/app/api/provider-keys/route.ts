@@ -107,3 +107,63 @@ export async function DELETE(request: Request) {
   }
   return NextResponse.json({ ok: true });
 }
+
+// PATCH — edit a key's budget and/or reconcile its spend to the provider's actual
+// remaining balance. RLS restricts this to the key's owner (or a workspace admin).
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const workspaceId = user.app_metadata?.workspace_id;
+  if (!workspaceId) return NextResponse.json({ error: "No workspace" }, { status: 403 });
+
+  let body: { id?: string; budgetUsd?: number | null; remainingUsd?: number };
+  try { body = await request.json(); } catch {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+  const { id, budgetUsd, remainingUsd } = body;
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const { data: key, error: kErr } = await supabase
+    .from("provider_api_keys")
+    .select("id, budget_tokens")
+    .eq("id", id)
+    .eq("workspace_id", workspaceId)
+    .single();
+  if (kErr || !key) return NextResponse.json({ error: "Key not found" }, { status: 404 });
+
+  const patch: Record<string, unknown> = {};
+  let budgetTok: number | null = (key.budget_tokens as number | null) ?? null;
+
+  if (budgetUsd !== undefined) {
+    budgetTok = typeof budgetUsd === "number" && budgetUsd > 0 ? Math.round(tokensFromUsd(budgetUsd)) : null;
+    patch.budget_tokens = budgetTok;
+  }
+
+  // "Reconcile": set spent so the remaining matches what the provider dashboard shows.
+  if (typeof remainingUsd === "number") {
+    if (budgetTok == null) {
+      return NextResponse.json({ error: "Set a budget before reconciling a remaining balance." }, { status: 400 });
+    }
+    patch.spent_tokens = Math.max(0, budgetTok - Math.round(tokensFromUsd(remainingUsd)));
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("provider_api_keys")
+    .update(patch)
+    .eq("id", id)
+    .eq("workspace_id", workspaceId)
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, created_at")
+    .single();
+
+  if (error) {
+    console.error("[provider-keys] PATCH: DB error", { id, error: error.message });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ key: data });
+}
