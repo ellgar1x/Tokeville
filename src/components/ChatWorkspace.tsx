@@ -8,10 +8,48 @@ import { PROVIDERS } from "@/lib/models";
 import { streamChat, type ChatUsage } from "@/lib/chatStream";
 import { MarkdownMessage } from "./MarkdownMessage";
 
+interface PendingAttachment {
+  kind: "image" | "pdf" | "text";
+  name: string;
+  mediaType: string;
+  data: string; // base64 for image/pdf, raw text for text
+  size: number;
+}
+
 interface Msg {
   role: "user" | "assistant";
   content: string;
   usage?: ChatUsage;
+  attachments?: { name: string; kind: string }[];
+}
+
+const MAX_FILES = 6;
+const MAX_FILE_BYTES = 8_000_000;
+
+function readFile(file: File): Promise<PendingAttachment> {
+  const isImage = file.type.startsWith("image/");
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    if (isImage || isPdf) {
+      reader.onload = () => {
+        const res = String(reader.result);
+        resolve({
+          kind: isPdf ? "pdf" : "image",
+          name: file.name,
+          mediaType: isPdf ? "application/pdf" : file.type,
+          data: res.split(",")[1] ?? "",
+          size: file.size,
+        });
+      };
+      reader.readAsDataURL(file);
+    } else {
+      reader.onload = () =>
+        resolve({ kind: "text", name: file.name, mediaType: file.type || "text/plain", data: String(reader.result), size: file.size });
+      reader.readAsText(file);
+    }
+  });
 }
 
 interface Conversation {
@@ -81,6 +119,22 @@ export function ChatWorkspace({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsTopUp, setNeedsTopUp] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function addFiles(files: FileList | File[]) {
+    setError(null);
+    const list = Array.from(files);
+    const room = MAX_FILES - attachments.length;
+    if (room <= 0) { setError(`You can attach up to ${MAX_FILES} files.`); return; }
+    const picked: PendingAttachment[] = [];
+    for (const f of list.slice(0, room)) {
+      if (f.size > MAX_FILE_BYTES) { setError(`"${f.name}" is too large (max 8MB).`); continue; }
+      try { picked.push(await readFile(f)); } catch { setError(`Couldn't read "${f.name}".`); }
+    }
+    if (picked.length) setAttachments((prev) => [...prev, ...picked]);
+  }
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -139,18 +193,26 @@ export function ChatWorkspace({
 
   async function send() {
     const text = input.trim();
-    if (!text || loading || !active?.accountId) return;
+    const pending = attachments;
+    if ((!text && pending.length === 0) || loading || !active?.accountId) return;
     setError(null);
     setNeedsTopUp(false);
 
-    const history: Msg[] = [...(active.messages), { role: "user", content: text }];
+    const userMsg: Msg = {
+      role: "user",
+      content: text,
+      ...(pending.length ? { attachments: pending.map((a) => ({ name: a.name, kind: a.kind })) } : {}),
+    };
+    const history: Msg[] = [...(active.messages), userMsg];
 
     // Auto-name from first user message
     const isFirstMessage = active.messages.length === 0;
-    const autoName = isFirstMessage ? text.slice(0, 42).trim() + (text.length > 42 ? "…" : "") : undefined;
+    const nameSeed = text || pending[0]?.name || "New chat";
+    const autoName = isFirstMessage ? nameSeed.slice(0, 42).trim() + (nameSeed.length > 42 ? "…" : "") : undefined;
 
     updateActive({ messages: history, ...(autoName ? { name: autoName } : {}) });
     setInput("");
+    setAttachments([]);
     setLoading(true);
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 9e9 }));
 
@@ -182,6 +244,7 @@ export function ChatWorkspace({
           subAccountId: reqAccount,
           model: reqModel,
           messages: history.map((m) => ({ role: m.role, content: m.content })),
+          attachments: pending.map((a) => ({ kind: a.kind, name: a.name, mediaType: a.mediaType, data: a.data })),
         },
         {
           onDelta: (text) => {
@@ -370,7 +433,17 @@ export function ChatWorkspace({
           )}
           {active.messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] ${m.role === "user" ? "items-end" : "items-start"}`}>
+              <div className={`flex max-w-[85%] flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
+                {m.attachments && m.attachments.length > 0 && (
+                  <div className="mb-1 flex flex-wrap justify-end gap-1.5">
+                    {m.attachments.map((a, j) => (
+                      <span key={j} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2 py-1 text-[11px] text-muted">
+                        <FileGlyph kind={a.kind} />
+                        <span className="max-w-[140px] truncate">{a.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div
                   className={`rounded-2xl px-4 py-2.5 text-sm ${
                     m.role === "user"
@@ -379,7 +452,7 @@ export function ChatWorkspace({
                   }`}
                 >
                   {m.role === "user" ? (
-                    m.content
+                    m.content || <span className="opacity-60">(sent {m.attachments?.length ?? 0} file{(m.attachments?.length ?? 0) === 1 ? "" : "s"})</span>
                   ) : m.content ? (
                     <MarkdownMessage content={m.content} />
                   ) : loading && i === active.messages.length - 1 ? (
@@ -429,24 +502,68 @@ export function ChatWorkspace({
           <p className="mx-4 mb-1 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{error}</p>
         )}
 
-        {/* Input bar */}
-        <div className="flex items-end gap-2 border-t border-border px-4 py-3">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-            rows={1}
-            placeholder={`Message ${selectedModel?.providerLabel ?? "AI"}…`}
-            className="scroll-thin max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-border-strong bg-surface px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-subtle focus:border-gold/50 focus:ring-2 focus:ring-gold/15"
-          />
-          <button
-            onClick={send}
-            disabled={loading || !input.trim() || !active.accountId}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all hover:from-gold hover:to-gold-deep disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none cursor-pointer"
-          >
-            <SendIcon className="h-4 w-4" />
-            Send
-          </button>
+        {/* Input bar (with drag-and-drop) */}
+        <div
+          className={`border-t border-border px-4 py-3 ${dragActive ? "bg-gold-soft" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); if (!dragActive) setDragActive(true); }}
+          onDragLeave={(e) => { e.preventDefault(); if (e.currentTarget === e.target) setDragActive(false); }}
+          onDrop={(e) => { e.preventDefault(); setDragActive(false); if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files); }}
+        >
+          {/* Attachment chips */}
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((a, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface-2 py-1 pl-2 pr-1 text-xs">
+                  <FileGlyph kind={a.kind} />
+                  <span className="max-w-[160px] truncate">{a.name}</span>
+                  <button
+                    onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    aria-label="Remove attachment"
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-subtle hover:bg-danger/15 hover:text-danger cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,application/pdf,.txt,.md,.csv,.json,.js,.ts,.tsx,.jsx,.py,.html,.css,.yaml,.yml,.sql"
+              className="hidden"
+              onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ""; }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              aria-label="Attach files"
+              title="Attach files"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-strong bg-surface text-muted transition-colors hover:border-gold/40 hover:text-gold disabled:opacity-40 cursor-pointer"
+            >
+              <PaperclipIcon className="h-[18px] w-[18px]" />
+            </button>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              rows={1}
+              placeholder={dragActive ? "Drop files to attach…" : `Message ${selectedModel?.providerLabel ?? "AI"}…`}
+              className="scroll-thin max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-border-strong bg-surface px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-subtle focus:border-gold/50 focus:ring-2 focus:ring-gold/15"
+            />
+            <button
+              onClick={send}
+              disabled={loading || (!input.trim() && attachments.length === 0) || !active.accountId}
+              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all hover:from-gold hover:to-gold-deep disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none cursor-pointer"
+            >
+              <SendIcon className="h-4 w-4" />
+              Send
+            </button>
+          </div>
         </div>
 
         {sessionTotal > 0 && (
@@ -456,5 +573,33 @@ export function ChatWorkspace({
         )}
       </div>
     </div>
+  );
+}
+
+function PaperclipIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>
+      <path d="M21.44 11.05 12.25 20.24a5 5 0 0 1-7.07-7.07l9.19-9.19a3.34 3.34 0 0 1 4.72 4.72l-9.2 9.19a1.67 1.67 0 0 1-2.36-2.36l8.49-8.49" />
+    </svg>
+  );
+}
+
+function FileGlyph({ kind }: { kind: string }) {
+  const color = kind === "image" ? "text-google" : kind === "pdf" ? "text-danger" : "text-muted";
+  return (
+    <svg className={`h-3.5 w-3.5 shrink-0 ${color}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden>
+      {kind === "image" ? (
+        <>
+          <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+          <circle cx="5.5" cy="6" r="1" />
+          <path d="M3 12l3.5-3.5L9 11l2-2 2 2" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      ) : (
+        <>
+          <path d="M4 1.5h5L13 5v9.5H4z" strokeLinejoin="round" />
+          <path d="M9 1.5V5h4" strokeLinejoin="round" />
+        </>
+      )}
+    </svg>
   );
 }

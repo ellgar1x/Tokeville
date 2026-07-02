@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 
-/** Flatten a React children tree into its raw text (for the copy button). */
+/** Flatten a React children tree into its raw text. */
 function nodeText(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -17,11 +17,66 @@ function nodeText(node: ReactNode): string {
   return "";
 }
 
-function CopyButton({ getText }: { getText: () => string }) {
-  const [copied, setCopied] = useState(false);
+// Map a fenced-code language to a file extension + mime for downloads.
+const EXT: Record<string, { ext: string; mime: string }> = {
+  html: { ext: "html", mime: "text/html" },
+  xml: { ext: "xml", mime: "application/xml" },
+  svg: { ext: "svg", mime: "image/svg+xml" },
+  javascript: { ext: "js", mime: "text/javascript" },
+  js: { ext: "js", mime: "text/javascript" },
+  jsx: { ext: "jsx", mime: "text/javascript" },
+  typescript: { ext: "ts", mime: "text/typescript" },
+  ts: { ext: "ts", mime: "text/typescript" },
+  tsx: { ext: "tsx", mime: "text/typescript" },
+  python: { ext: "py", mime: "text/x-python" },
+  py: { ext: "py", mime: "text/x-python" },
+  css: { ext: "css", mime: "text/css" },
+  json: { ext: "json", mime: "application/json" },
+  markdown: { ext: "md", mime: "text/markdown" },
+  md: { ext: "md", mime: "text/markdown" },
+  bash: { ext: "sh", mime: "text/x-shellscript" },
+  sh: { ext: "sh", mime: "text/x-shellscript" },
+  shell: { ext: "sh", mime: "text/x-shellscript" },
+  sql: { ext: "sql", mime: "application/sql" },
+  yaml: { ext: "yaml", mime: "text/yaml" },
+  yml: { ext: "yml", mime: "text/yaml" },
+  java: { ext: "java", mime: "text/x-java" },
+  c: { ext: "c", mime: "text/x-c" },
+  cpp: { ext: "cpp", mime: "text/x-c++" },
+  go: { ext: "go", mime: "text/x-go" },
+  rust: { ext: "rs", mime: "text/x-rust" },
+  rs: { ext: "rs", mime: "text/x-rust" },
+  ruby: { ext: "rb", mime: "text/x-ruby" },
+  php: { ext: "php", mime: "text/x-php" },
+};
+
+function saveBlob(data: BlobPart, mime: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([data], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+function TinyButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-subtle transition-colors hover:text-foreground cursor-pointer"
+    >
+      {children}
+    </button>
+  );
+}
+
+function CopyButton({ getText }: { getText: () => string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <TinyButton
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(getText());
@@ -31,28 +86,133 @@ function CopyButton({ getText }: { getText: () => string }) {
           /* ignore */
         }
       }}
-      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-subtle transition-colors hover:text-foreground cursor-pointer"
     >
       {copied ? "Copied" : "Copy"}
-    </button>
+    </TinyButton>
   );
 }
 
-/** Code fence: a header (language + copy) over the highlighted block. */
+/** Presentation card — turns a ```slides JSON block into a real .pptx download. */
+interface Slide { title?: string; subtitle?: string; bullets?: unknown[]; notes?: string }
+function SlidesCard({ raw }: { raw: string }) {
+  const [building, setBuilding] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  let slides: Slide[] | null = null;
+  try {
+    const parsed = JSON.parse(raw);
+    slides = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.slides) ? parsed.slides : null;
+  } catch {
+    slides = null;
+  }
+
+  async function build() {
+    if (!slides) return;
+    setErr(null);
+    setBuilding(true);
+    try {
+      const PptxGenJS = (await import("pptxgenjs")).default;
+      const pptx = new PptxGenJS();
+      pptx.layout = "LAYOUT_WIDE";
+      slides.forEach((s, i) => {
+        const slide = pptx.addSlide();
+        slide.background = { color: "0A0A0B" };
+        slide.addText(String(s.title ?? `Slide ${i + 1}`), {
+          x: 0.6, y: 0.5, w: 12, h: 1, fontSize: 30, bold: true, color: "E8B85F", fontFace: "Arial",
+        });
+        if (s.subtitle) {
+          slide.addText(String(s.subtitle), { x: 0.6, y: 1.5, w: 12, h: 0.6, fontSize: 16, color: "A2A2AB" });
+        }
+        const bullets = Array.isArray(s.bullets) ? s.bullets : [];
+        if (bullets.length) {
+          slide.addText(
+            bullets.map((b) => ({ text: String(b), options: { bullet: true, fontSize: 18, color: "F6F4EE", paraSpaceAfter: 8 } })),
+            { x: 0.9, y: s.subtitle ? 2.3 : 1.8, w: 11.4, h: 4.5, valign: "top" },
+          );
+        }
+        if (s.notes) slide.addNotes(String(s.notes));
+      });
+      await pptx.writeFile({ fileName: "tokeville-presentation.pptx" });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not build the deck");
+    } finally {
+      setBuilding(false);
+    }
+  }
+
+  if (!slides) {
+    // Fall back to showing the raw block if it isn't valid slide JSON.
+    return <pre className="scroll-thin my-3 overflow-x-auto rounded-xl border border-border-strong bg-[#0d1117] px-4 py-3 text-[13px]">{raw}</pre>;
+  }
+
+  return (
+    <div className="my-3 rounded-xl border border-gold/25 bg-gold-soft p-4">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold/15 text-gold">
+          <SlidesIcon />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">Presentation ready</p>
+          <p className="text-xs text-subtle">{slides.length} slide{slides.length === 1 ? "" : "s"} · PowerPoint (.pptx)</p>
+        </div>
+        <button
+          onClick={build}
+          disabled={building}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3 text-xs font-semibold text-[#0a0a0b] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer"
+        >
+          <DownloadIcon /> {building ? "Building…" : "Download .pptx"}
+        </button>
+      </div>
+      {/* Slide outline preview */}
+      <ol className="mt-3 space-y-1.5">
+        {slides.slice(0, 8).map((s, i) => (
+          <li key={i} className="flex gap-2 text-xs">
+            <span className="tnum shrink-0 font-mono text-subtle">{i + 1}.</span>
+            <span className="font-medium">{String(s.title ?? `Slide ${i + 1}`)}</span>
+          </li>
+        ))}
+        {slides.length > 8 && <li className="text-xs text-subtle">+ {slides.length - 8} more</li>}
+      </ol>
+      {err && <p className="mt-2 text-xs text-danger">{err}</p>}
+    </div>
+  );
+}
+
+/** A fenced code block: header (language + copy + download [+ preview]) over the highlighted code. */
 function PreBlock({ children }: { children?: ReactNode }) {
   const codeEl = Array.isArray(children) ? children[0] : children;
   const className =
     (codeEl && typeof codeEl === "object" && "props" in codeEl
       ? (codeEl as { props: { className?: string } }).props.className
       : "") ?? "";
-  const lang = /language-([\w-]+)/.exec(className)?.[1] ?? "";
-  const getText = () => nodeText(children);
+  const lang = (/language-([\w-]+)/.exec(className)?.[1] ?? "").toLowerCase();
+  const raw = nodeText(children);
+
+  // Presentations get a dedicated download card.
+  if (lang === "slides") return <SlidesCard raw={raw} />;
+
+  const meta = EXT[lang];
+  const isHtml = lang === "html";
+
+  function download() {
+    const { ext, mime } = meta ?? { ext: "txt", mime: "text/plain" };
+    saveBlob(raw, mime, `tokeville-file.${ext}`);
+  }
+  function preview() {
+    const url = URL.createObjectURL(new Blob([raw], { type: "text/html" }));
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
 
   return (
     <div className="my-3 overflow-hidden rounded-xl border border-border-strong bg-[#0d1117]">
       <div className="flex items-center justify-between border-b border-border-strong px-3 py-1.5">
         <span className="font-mono text-[11px] uppercase tracking-wide text-subtle">{lang || "code"}</span>
-        <CopyButton getText={getText} />
+        <div className="flex items-center gap-0.5">
+          {isHtml && <TinyButton onClick={preview}>Preview ↗</TinyButton>}
+          <TinyButton onClick={download}>Download</TinyButton>
+          <CopyButton getText={() => raw} />
+        </div>
       </div>
       <pre className="scroll-thin overflow-x-auto px-4 py-3 text-[13px] leading-relaxed">{children}</pre>
     </div>
@@ -68,8 +228,6 @@ export const MarkdownMessage = memo(function MarkdownMessage({ content }: { cont
         components={{
           pre: PreBlock,
           code({ className, children, ...props }) {
-            // Block code carries a language- class (wrapped by PreBlock); leave it
-            // for highlight.js. Everything else is inline code.
             if (className?.includes("language-") || className?.includes("hljs")) {
               return <code className={className} {...props}>{children}</code>;
             }
@@ -85,3 +243,19 @@ export const MarkdownMessage = memo(function MarkdownMessage({ content }: { cont
     </div>
   );
 });
+
+function DownloadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M8 2v8m0 0 3-3m-3 3L5 7M3 13h10" />
+    </svg>
+  );
+}
+function SlidesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+      <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
+      <path d="M10 13.5V17M7 17h6" strokeLinecap="round" />
+    </svg>
+  );
+}

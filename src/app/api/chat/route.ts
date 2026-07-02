@@ -15,12 +15,24 @@ interface ChatMessage {
   content: string;
 }
 
+/** A file attached to the latest user message. `data` is base64 for image/pdf, raw text for text. */
+interface Attachment {
+  kind: "image" | "pdf" | "text";
+  name: string;
+  mediaType: string;
+  data: string;
+}
+
 interface ChatBody {
   subAccountId?: string;
   model?: string;
   messages?: ChatMessage[];
   systemPrompt?: string;
+  attachments?: Attachment[];
 }
+
+const MAX_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 8_000_000; // ~8MB decoded per file
 
 /** Mutable usage accumulator filled by the provider streamers. */
 interface Usage {
@@ -30,6 +42,13 @@ interface Usage {
 
 const DEFAULT_SYSTEM =
   "You are a helpful assistant accessed through Tokeville, an AI spend-management platform. Be clear and concise.";
+
+/** Appended to every system prompt so the client's file/artifact features work. */
+const ARTIFACT_GUIDE = `
+
+You can produce downloadable files for the user:
+- For a file or a website, output its COMPLETE contents in a single fenced code block tagged with the correct language (e.g. \`\`\`html for a web page). The app adds Download and, for HTML, Preview buttons.
+- For a PowerPoint presentation, output a fenced code block tagged \`\`\`slides containing ONLY a JSON array of slide objects: [{"title": "...", "subtitle": "...", "bullets": ["...", "..."], "notes": "..."}]. subtitle and notes are optional. The app turns it into a downloadable .pptx. Do not also paste the raw JSON elsewhere.`;
 
 interface ResolvedKey {
   apiKey: string;
@@ -84,16 +103,35 @@ async function* streamAnthropic(
   messages: ChatMessage[],
   systemPrompt: string | undefined,
   usage: Usage,
+  attachments: Attachment[] = [],
 ): AsyncGenerator<string> {
   const client = new Anthropic({ apiKey });
+  const recent = messages.slice(-20);
+  const mapped = recent.map((m, i) => {
+    const isLastUser = i === recent.length - 1 && m.role === "user";
+    if (isLastUser && attachments.length) {
+      // Multimodal content: attachments first, then the typed text.
+      const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+      for (const a of attachments) {
+        if (a.kind === "image") {
+          blocks.push({ type: "image", source: { type: "base64", media_type: a.mediaType as "image/png", data: a.data } });
+        } else if (a.kind === "pdf") {
+          blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } });
+        } else {
+          blocks.push({ type: "text", text: `Attached file "${a.name}":\n\n${a.data}` });
+        }
+      }
+      if (m.content) blocks.push({ type: "text", text: String(m.content) });
+      return { role: "user" as const, content: blocks };
+    }
+    return { role: m.role === "assistant" ? ("assistant" as const) : ("user" as const), content: String(m.content) };
+  });
+
   const stream = await client.messages.create({
     model,
     max_tokens: 4096,
     system: systemPrompt ?? DEFAULT_SYSTEM,
-    messages: messages.slice(-20).map((m) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content),
-    })),
+    messages: mapped,
     stream: true,
   });
   for await (const event of stream) {
@@ -115,12 +153,31 @@ async function* streamOpenAI(
   messages: ChatMessage[],
   systemPrompt: string | undefined,
   usage: Usage,
+  attachments: Attachment[] = [],
 ): AsyncGenerator<string> {
   const client = new OpenAI({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
   const isReasoning = model.startsWith("o1") || model.startsWith("o3");
+  const recent = messages.slice(-20);
   const oaiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     ...(!isReasoning ? [{ role: "system" as const, content: systemPrompt ?? DEFAULT_SYSTEM }] : []),
-    ...messages.slice(-20).map((m) => ({ role: m.role as "user" | "assistant", content: String(m.content) })),
+    ...recent.map((m, i) => {
+      const isLastUser = i === recent.length - 1 && m.role === "user";
+      if (isLastUser && attachments.length) {
+        const parts: OpenAI.Chat.ChatCompletionContentPart[] = [];
+        for (const a of attachments) {
+          if (a.kind === "image") {
+            parts.push({ type: "image_url", image_url: { url: `data:${a.mediaType};base64,${a.data}` } });
+          } else if (a.kind === "text") {
+            parts.push({ type: "text", text: `Attached file "${a.name}":\n\n${a.data}` });
+          } else {
+            parts.push({ type: "text", text: `[Attached PDF "${a.name}" — ask the user to paste its text; PDFs aren't supported on this model.]` });
+          }
+        }
+        if (m.content) parts.push({ type: "text", text: String(m.content) });
+        return { role: "user" as const, content: parts };
+      }
+      return { role: m.role as "user" | "assistant", content: String(m.content) };
+    }),
   ];
 
   // Some reasoning models don't support streaming — fall back to a single chunk.
@@ -156,6 +213,7 @@ async function* streamGoogle(
   messages: ChatMessage[],
   systemPrompt: string | undefined,
   usage: Usage,
+  attachments: Attachment[] = [],
 ): AsyncGenerator<string> {
   const client = new GoogleGenerativeAI(apiKey);
   const genModel = client.getGenerativeModel({ model, systemInstruction: systemPrompt ?? DEFAULT_SYSTEM });
@@ -165,7 +223,18 @@ async function* streamGoogle(
   }));
   const last = messages[messages.length - 1];
   const chat = genModel.startChat({ history });
-  const result = await chat.sendMessageStream(last.content);
+
+  // Build the final user turn with any attachments (images/PDF inline, text inline).
+  const lastParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+  for (const a of attachments) {
+    if (a.kind === "image" || a.kind === "pdf") {
+      lastParts.push({ inlineData: { mimeType: a.kind === "pdf" ? "application/pdf" : a.mediaType, data: a.data } });
+    } else {
+      lastParts.push({ text: `Attached file "${a.name}":\n\n${a.data}` });
+    }
+  }
+  if (last.content) lastParts.push({ text: String(last.content) });
+  const result = await chat.sendMessageStream(lastParts.length ? lastParts : last.content);
   for await (const chunk of result.stream) {
     const text = chunk.text();
     if (text) yield text;
@@ -182,11 +251,12 @@ function runStream(
   messages: ChatMessage[],
   systemPrompt: string | undefined,
   usage: Usage,
+  attachments: Attachment[],
 ): AsyncGenerator<string> {
-  if (provider.key === "anthropic") return streamAnthropic(creds.apiKey, apiModel, messages, systemPrompt, usage);
+  if (provider.key === "anthropic") return streamAnthropic(creds.apiKey, apiModel, messages, systemPrompt, usage, attachments);
   if (provider.key === "openai" || provider.key === "custom")
-    return streamOpenAI(creds.apiKey, creds.baseUrl, apiModel, messages, systemPrompt, usage);
-  return streamGoogle(creds.apiKey, apiModel, messages, systemPrompt, usage);
+    return streamOpenAI(creds.apiKey, creds.baseUrl, apiModel, messages, systemPrompt, usage, attachments);
+  return streamGoogle(creds.apiKey, apiModel, messages, systemPrompt, usage, attachments);
 }
 
 export async function POST(request: Request) {
@@ -219,6 +289,21 @@ export async function POST(request: Request) {
   for (const msg of messages) {
     if (typeof msg.content === "string" && msg.content.length > MAX_MESSAGE_CHARS) {
       return NextResponse.json({ error: `Message too long (max ${MAX_MESSAGE_CHARS} chars)` }, { status: 400 });
+    }
+  }
+
+  // Validate attachments (files dropped into the chat).
+  const attachments: Attachment[] = Array.isArray(body.attachments) ? body.attachments : [];
+  if (attachments.length > MAX_ATTACHMENTS) {
+    return NextResponse.json({ error: `Too many attachments (max ${MAX_ATTACHMENTS})` }, { status: 400 });
+  }
+  for (const a of attachments) {
+    if (!a || !["image", "pdf", "text"].includes(a.kind) || typeof a.data !== "string") {
+      return NextResponse.json({ error: "Invalid attachment" }, { status: 400 });
+    }
+    const bytes = a.kind === "text" ? a.data.length : Math.floor(a.data.length * 0.75);
+    if (bytes > MAX_ATTACHMENT_BYTES) {
+      return NextResponse.json({ error: `Attachment "${a.name}" is too large (max 8MB).` }, { status: 400 });
     }
   }
 
@@ -270,7 +355,8 @@ export async function POST(request: Request) {
   }
   const { provider, model: modelDef } = found as { provider: ProviderDef; model: ModelDef };
   const apiModel = modelDef.apiModelId ?? model;
-  const systemPrompt = reqSystemPrompt ?? modelDef.systemPrompt;
+  // Always append the artifact guide so file/pptx generation works.
+  const systemPrompt = (reqSystemPrompt ?? modelDef.systemPrompt ?? DEFAULT_SYSTEM) + ARTIFACT_GUIDE;
 
   const creds = await getProviderKey(supabase, workspaceId, user.id, provider.key);
   if (!creds) {
@@ -295,7 +381,7 @@ export async function POST(request: Request) {
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       try {
-        for await (const text of runStream(provider, creds, apiModel, messages, systemPrompt, usage)) {
+        for await (const text of runStream(provider, creds, apiModel, messages, systemPrompt, usage, attachments)) {
           if (text) send({ type: "delta", text });
         }
       } catch (e) {
