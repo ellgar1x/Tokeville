@@ -137,13 +137,19 @@ has demo); **cross-tenant key-leak fix** (removed shared platform-key fallback).
 2. **Provider prices can drift** if a provider changes rates — the rate card in `models.ts` is
    the single source of truth; update it (and re-verify with web search) when needed. The manual
    **Reconcile** control on each key is the per-user safety net.
-3. **elliot's stored Anthropic key is plaintext** in `provider_api_keys.api_key` (predates
-   encryption). New keys are AES-encrypted (`src/lib/crypto.ts`, needs `ENCRYPTION_KEY`).
-   `decryptSecret` passes plaintext through. Worth re-encrypting.
+3. ~~elliot's stored Anthropic key is plaintext~~ — DONE (re-encrypted 2026-07-02; verified
+   via live chat). NOTE: production (Vercel) must have the same `ENCRYPTION_KEY` env set or
+   prod chat can't decrypt stored keys — verify in the Vercel dashboard.
 4. **Members can't self-serve API keys yet** — data model/API/RLS support member-owned keys, but
    the key UI lives in admin Settings (`/member` has no keys panel). Easy follow-up if wanted.
 5. **Anthropic admin cost sync** was explored and dropped — the user's plan has no admin key.
    Rate card + manual reconcile is the chosen path.
+6. **RPC grants locked down (2026-07-02)** — `mint_tokens`, `init_empty_workspace`, and
+   `seed_institution_data` had NO internal auth check yet were executable by `anon` +
+   `authenticated` via PostgREST (unlimited free minting / workspace wipe). Migrations
+   `lock_down_privileged_rpcs` + `revoke_public_execute_on_mutation_rpcs` revoked them
+   (service_role only) and removed anon EXECUTE from all mutation RPCs. Verified: anon
+   calls now return 401; authenticated chat/metering still works end-to-end.
 
 ---
 

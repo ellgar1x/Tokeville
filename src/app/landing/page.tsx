@@ -60,7 +60,7 @@ export default function LandingPage() {
             <h1 className="reveal-on-scroll reveal-d1 mt-6 text-balance text-5xl font-bold leading-[1.04] tracking-tight sm:text-6xl">
               AI spend,
               <br />
-              <span className="gold-text">under control.</span>
+              <span className="gold-shimmer">under control.</span>
             </h1>
 
             <p className="reveal-on-scroll reveal-d2 mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-muted lg:mx-0">
@@ -107,8 +107,13 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ─── Live ledger ticker ───────────────────────────────────── */}
+      <section aria-label="Example of the live token ledger" className="border-y border-border/60 bg-surface/30 py-3">
+        <LedgerTicker />
+      </section>
+
       {/* ─── Logos / trust strip ──────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-5 pb-8">
+      <section className="mx-auto max-w-6xl px-5 pb-8 pt-10">
         <p className="text-center text-xs font-medium uppercase tracking-[0.18em] text-subtle">
           Meters usage across the models your teams already use
         </p>
@@ -385,8 +390,14 @@ export default function LandingPage() {
             <span className="text-sm font-semibold tracking-tight">Tokeville</span>
             <span className="text-xs text-subtle">· AI tokens as currency</span>
           </div>
+          <nav className="flex items-center gap-6 text-xs text-muted">
+            <a href="#features" className="transition-colors hover:text-foreground">Features</a>
+            <a href="#plans" className="transition-colors hover:text-foreground">Plans</a>
+            <a href="#security" className="transition-colors hover:text-foreground">Security</a>
+            <Link href="/login" className="transition-colors hover:text-gold">Sign in</Link>
+          </nav>
           <p className="text-xs text-subtle">
-            Built for finance teams, agencies, and enterprises managing multi-model AI spend.
+            Built for teams managing multi-model AI spend.
           </p>
         </div>
       </footer>
@@ -422,6 +433,44 @@ function BackgroundDecor() {
   );
 }
 
+/* ───────────────────────── Ledger ticker ────────────────────── */
+
+const TICKER_ENTRIES: Array<{ label: string; amount: string; spend: boolean }> = [
+  { label: "Engineering · Claude Opus 4.8", amount: "−Ŧ8,420", spend: true },
+  { label: "Deposit · Stripe ••4242", amount: "+Ŧ500M", spend: false },
+  { label: "Growth Team · GPT-5.1", amount: "−Ŧ5,120", spend: true },
+  { label: "Auto top-up · Design", amount: "+Ŧ40M", spend: false },
+  { label: "Acme Corp · Gemini 2.5 Pro", amount: "−Ŧ3,300", spend: true },
+  { label: "Allocated · Sasha Kim", amount: "+Ŧ120M", spend: false },
+  { label: "Research · Claude Sonnet 4.6", amount: "−Ŧ1,284", spend: true },
+  { label: "Budget raise approved · Growth", amount: "+Ŧ60M", spend: false },
+];
+
+function LedgerTicker() {
+  // The list is rendered twice so the -50% translate loops seamlessly.
+  const row = (hidden: boolean) => (
+    <div aria-hidden={hidden || undefined} className="flex shrink-0 items-center">
+      {TICKER_ENTRIES.map((e) => (
+        <span key={e.label} className="flex items-center gap-2.5 px-6 text-xs whitespace-nowrap">
+          <span className={`h-1.5 w-1.5 rounded-full ${e.spend ? "bg-gold" : "bg-positive"}`} />
+          <span className="text-muted">{e.label}</span>
+          <span className={`tnum font-mono font-semibold ${e.spend ? "text-foreground" : "text-positive"}`}>
+            {e.amount}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+  return (
+    <div className="ticker-mask">
+      <div className="ticker-track">
+        {row(false)}
+        {row(true)}
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────── Product mockup ───────────────────── */
 
 function TreasuryMockup() {
@@ -440,7 +489,7 @@ function TreasuryMockup() {
     .join(" ");
 
   return (
-    <div className="gold-border relative rounded-3xl border border-border bg-surface/80 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+    <div className="gold-border relative rounded-3xl border border-border bg-surface/80 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.8)] backdrop-blur-xl transition-transform duration-300 hover:-translate-y-1">
       <div className="gold-edge rounded-3xl">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -471,7 +520,7 @@ function TreasuryMockup() {
             </linearGradient>
           </defs>
           <path d={`${path} L${w},${h} L0,${h} Z`} fill="url(#spark-fill)" />
-          <path d={path} fill="none" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path className="spark-draw" d={path} fill="none" stroke="var(--gold)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
 
         {/* Sub-account rows */}
