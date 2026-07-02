@@ -46,9 +46,16 @@ const DEFAULT_SYSTEM =
 /** Appended to every system prompt so the client's file/artifact features work. */
 const ARTIFACT_GUIDE = `
 
-You can produce downloadable files for the user:
-- For a file or a website, output its COMPLETE contents in a single fenced code block tagged with the correct language (e.g. \`\`\`html for a web page). The app adds Download and, for HTML, Preview buttons.
-- For a PowerPoint presentation, output a fenced code block tagged \`\`\`slides containing ONLY a JSON array of slide objects: [{"title": "...", "subtitle": "...", "bullets": ["...", "..."], "notes": "..."}]. subtitle and notes are optional. The app turns it into a downloadable .pptx. Do not also paste the raw JSON elsewhere.`;
+When the user asks you to create or generate a file, PRODUCE THAT FILE in the format they asked for — never substitute a different format. Output the file as a single fenced code block; the app turns each of the block types below into a real, downloadable file:
+
+- Word document (.docx) — for reports, letters, memos, essays, notes, plans, or any prose document. Use a block tagged \`\`\`document containing ONLY a JSON object: {"title":"Doc Title","body":[{"h1":"Heading"},{"h2":"Subheading"},{"p":"A paragraph."},{"ul":["bullet","bullet"]},{"ol":["step","step"]}]}. Items render in order; use h1/h2/h3 for headings, p for paragraphs, ul/ol for lists.
+- Spreadsheet (.xlsx) — for tables, data, budgets, trackers, comparisons. Use a block tagged \`\`\`sheet containing ONLY JSON: {"name":"Sheet1","columns":["Column A","Column B"],"rows":[["a1","b1"],["a2","b2"]]}.
+- CSV (.csv) — only if the user specifically asks for CSV: a \`\`\`csv block with raw comma-separated rows (header row first).
+- PowerPoint (.pptx) — a \`\`\`slides block containing ONLY a JSON array: [{"title":"...","subtitle":"...","bullets":["...","..."],"notes":"..."}]. subtitle and notes are optional.
+- Web page (.html) — ONLY when the user explicitly asks for a web page, website, or HTML. Never use HTML as a generic wrapper for a document or dataset.
+- Code or plain text — for source code, config, or a text file, use a fenced block tagged with the correct language (\`\`\`python, \`\`\`json, \`\`\`md, \`\`\`txt, etc.).
+
+If the user just says "make me a file" / "a document" without naming a format, produce a Word document (\`\`\`document). Choose the block type that matches what was asked: a document for prose, a spreadsheet for tabular data, slides for a presentation. Output ONLY the single code block for the requested file (a brief sentence before it is fine) — do not also paste the raw JSON or repeat the contents elsewhere.`;
 
 interface ResolvedKey {
   apiKey: string;
