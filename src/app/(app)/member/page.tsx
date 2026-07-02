@@ -41,7 +41,7 @@ const PRESET_PALETTES = [
 ];
 
 export default function MemberPage() {
-  const { state, useAI, connectAccount, requestBudget, updateColors } = useMember();
+  const { state, userId, useAI, connectAccount, requestBudget, updateColors } = useMember();
   const { projects, connectedAccounts } = state;
 
   const [tab, setTab] = useState<MemberTab>("overview");
@@ -382,7 +382,7 @@ export default function MemberPage() {
           <ChatWorkspace
             accounts={projects.map((p) => ({ id: p.id, name: p.name }))}
             availableProviders={availableProviders}
-            storageKey="member"
+            storageKey={`member-${userId}`}
           />
         </div>
       )}

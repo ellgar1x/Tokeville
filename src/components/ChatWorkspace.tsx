@@ -102,6 +102,17 @@ export function ChatWorkspace({
   const lsKey = `tokeville-workspace-${storageKey}`;
   const defaultAccountId = accounts[0]?.id ?? (allowPersonal ? "personal" : "");
 
+  // Storage keys used to be the un-scoped constants "admin"/"member", which meant
+  // chat history (including message content) was shared across every workspace/user
+  // signed in on the same browser. Keys are now scoped per workspace/user; purge the
+  // legacy un-scoped entries so previously-leaked history is removed from the client.
+  useEffect(() => {
+    try {
+      localStorage.removeItem("tokeville-workspace-admin");
+      localStorage.removeItem("tokeville-workspace-member");
+    } catch { /* ignore */ }
+  }, []);
+
   const [convs, setConvs] = useState<Conversation[]>(() => {
     if (typeof window === "undefined") return [];
     try {

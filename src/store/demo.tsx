@@ -184,6 +184,8 @@ interface DerivedWallet extends WalletBase {
 
 interface DemoContext {
   state: Omit<State, "wallet"> & { wallet: DerivedWallet };
+  /** Current admin's workspace id — used to scope per-workspace client storage. */
+  workspaceId: string;
   unallocated: number;
   openModal: (modal: ModalState) => void;
   closeModal: () => void;
@@ -282,6 +284,7 @@ export function DemoProvider({
         ...state,
         wallet: { ...state.wallet, monthToDateTokens, allocatedTokens },
       },
+      workspaceId,
       unallocated: balance - allocatedTokens,
       openModal: (modal) => dispatch({ type: "OPEN_MODAL", modal }),
       closeModal: () => dispatch({ type: "CLOSE_MODAL" }),

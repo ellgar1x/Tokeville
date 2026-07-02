@@ -84,6 +84,8 @@ function reducer(state: State, action: Action): State {
 
 interface MemberContext {
   state: State;
+  /** Current member's user id — used to scope per-user client storage. */
+  userId: string;
   updateColors: (args: { primaryColor: string; secondaryColor: string }) => void;
   useAI: (args: {
     subAccountId: string;
@@ -172,6 +174,7 @@ export function MemberProvider({
 
     return {
       state,
+      userId,
       updateColors: ({ primaryColor, secondaryColor }) => {
         localStorage.setItem("tokeville-member-primary", primaryColor);
         localStorage.setItem("tokeville-member-secondary", secondaryColor);

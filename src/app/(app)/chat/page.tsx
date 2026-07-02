@@ -5,7 +5,7 @@ import { useDemo } from "@/store/demo";
 import { ChatWorkspace } from "@/components/ChatWorkspace";
 
 export default function ChatPage() {
-  const { state } = useDemo();
+  const { state, workspaceId } = useDemo();
   const [availableProviders, setAvailableProviders] = useState<string[]>(["anthropic"]);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function ChatPage() {
       <ChatWorkspace
         accounts={state.accounts.map((a) => ({ id: a.id, name: a.name }))}
         availableProviders={availableProviders}
-        storageKey="admin"
+        storageKey={`admin-${workspaceId}`}
         allowPersonal
       />
     </div>
