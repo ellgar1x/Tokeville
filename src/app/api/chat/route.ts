@@ -61,8 +61,9 @@ interface ResolvedKey {
 }
 
 /**
- * Resolve which key serves this request. Preference: the caller's OWN stored key
- * for the provider → any workspace key → Tokeville's platform Anthropic key.
+ * Resolve which key serves this request — STRICTLY within the caller's workspace.
+ * Preference: the caller's OWN stored key for the provider → any key in the same
+ * workspace. No cross-workspace or shared platform-key fallback (tenant isolation).
  * Returning the row id lets the caller enforce + record that key's budget.
  */
 async function getProviderKey(
@@ -89,10 +90,8 @@ async function getProviderKey(
     };
   }
 
-  // No stored key — fall back to Tokeville's own Anthropic key.
-  if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
-    return { apiKey: process.env.ANTHROPIC_API_KEY, keyId: null };
-  }
+  // No key in THIS workspace → no chat. Never fall back to a shared/platform key:
+  // every workspace uses only its own keys, so one company can never use another's.
   return null;
 }
 
