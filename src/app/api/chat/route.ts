@@ -31,24 +31,50 @@ interface Usage {
 const DEFAULT_SYSTEM =
   "You are a helpful assistant accessed through Tokeville, an AI spend-management platform. Be clear and concise.";
 
-/** Fetch the API key (and optional base URL) for a provider from the DB. */
+interface ResolvedKey {
+  apiKey: string;
+  baseUrl?: string | null;
+  /** DB provider_api_keys.id when a stored key is used; null for the platform key. */
+  keyId: string | null;
+  /** Per-key budget in TOK (null = no cap); undefined for the platform key. */
+  budgetTokens?: number | null;
+  spentTokens?: number;
+}
+
+/**
+ * Resolve which key serves this request. Preference: the caller's OWN stored key
+ * for the provider → any workspace key → Tokeville's platform Anthropic key.
+ * Returning the row id lets the caller enforce + record that key's budget.
+ */
 async function getProviderKey(
   supabase: Awaited<ReturnType<typeof createClient>>,
   workspaceId: string,
+  userId: string,
   provider: string,
-): Promise<{ apiKey: string; baseUrl?: string | null } | null> {
-  if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
-    return { apiKey: process.env.ANTHROPIC_API_KEY };
-  }
-  const { data } = await supabase
+): Promise<ResolvedKey | null> {
+  const { data: keys } = await supabase
     .from("provider_api_keys")
-    .select("api_key, base_url")
+    .select("id, api_key, base_url, budget_tokens, spent_tokens, owner_user_id")
     .eq("workspace_id", workspaceId)
     .eq("provider", provider)
-    .limit(1)
-    .single();
-  if (!data) return null;
-  return { apiKey: decryptSecret(data.api_key), baseUrl: data.base_url };
+    .order("created_at");
+
+  const chosen = keys?.find((k) => k.owner_user_id === userId) ?? keys?.[0];
+  if (chosen) {
+    return {
+      apiKey: decryptSecret(chosen.api_key),
+      baseUrl: chosen.base_url,
+      keyId: chosen.id as string,
+      budgetTokens: chosen.budget_tokens === null ? null : Number(chosen.budget_tokens),
+      spentTokens: Number(chosen.spent_tokens),
+    };
+  }
+
+  // No stored key — fall back to Tokeville's own Anthropic key.
+  if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
+    return { apiKey: process.env.ANTHROPIC_API_KEY, keyId: null };
+  }
+  return null;
 }
 
 /** Stream text deltas from Anthropic, recording exact token usage as it arrives. */
@@ -246,11 +272,19 @@ export async function POST(request: Request) {
   const apiModel = modelDef.apiModelId ?? model;
   const systemPrompt = reqSystemPrompt ?? modelDef.systemPrompt;
 
-  const creds = await getProviderKey(supabase, workspaceId, provider.key);
+  const creds = await getProviderKey(supabase, workspaceId, user.id, provider.key);
   if (!creds) {
     return NextResponse.json(
       { error: `No API key configured for ${provider.label}. Add one in Settings → AI Providers.` },
       { status: 503 },
+    );
+  }
+
+  // Enforce the specific key's own budget (when it has one), before any AI cost.
+  if (creds.keyId && creds.budgetTokens != null && (creds.spentTokens ?? 0) >= creds.budgetTokens) {
+    return NextResponse.json(
+      { error: "This API key's budget is used up. Raise its budget in Settings → AI Providers, or use another key." },
+      { status: 402 },
     );
   }
 
@@ -294,6 +328,15 @@ export async function POST(request: Request) {
           });
       if (rpcError) {
         console.error("[chat] token deduction RPC failed", { subAccountId, costTok, isPersonal, error: rpcError.message });
+      }
+
+      // Also record the spend against the specific API key used (per-key budget view).
+      if (creds.keyId) {
+        const { error: keyErr } = await supabase.rpc("record_key_spend", {
+          p_key_id: creds.keyId,
+          p_amount: costTok,
+        });
+        if (keyErr) console.error("[chat] record_key_spend failed", { keyId: creds.keyId, error: keyErr.message });
       }
 
       send({
