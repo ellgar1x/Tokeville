@@ -46,16 +46,26 @@ const DEFAULT_SYSTEM =
 /** Appended to every system prompt so the client's file/artifact features work. */
 const ARTIFACT_GUIDE = `
 
-When the user asks you to create or generate a file, PRODUCE THAT FILE in the format they asked for — never substitute a different format. Output the file as a single fenced code block; the app turns each of the block types below into a real, downloadable file:
+When the user asks you to create or generate a file, PRODUCE THAT FILE in the format they asked for — never substitute a different format. Output the file as a single fenced code block; the app turns each of the block types below into a real, downloadable file.
 
-- Word document (.docx) — for reports, letters, memos, essays, notes, plans, or any prose document. Use a block tagged \`\`\`document containing ONLY a JSON object: {"title":"Doc Title","body":[{"h1":"Heading"},{"h2":"Subheading"},{"p":"A paragraph."},{"ul":["bullet","bullet"]},{"ol":["step","step"]}]}. Items render in order; use h1/h2/h3 for headings, p for paragraphs, ul/ol for lists.
-- Spreadsheet (.xlsx) — for tables, data, budgets, trackers, comparisons. Use a block tagged \`\`\`sheet containing ONLY JSON: {"name":"Sheet1","columns":["Column A","Column B"],"rows":[["a1","b1"],["a2","b2"]]}.
+QUALITY BAR — the file is the deliverable, so make it genuinely excellent, the same standard you'd hold in a normal answer:
+- Write complete, substantive content. Real paragraphs with full sentences — never terse one-line fragments or placeholder text. If you'd write three sentences to explain something in chat, write them here too.
+- Structure it like a professional would: a clear title, a short intro/overview, logical sections with descriptive headings, and a closing where it fits. Prefer well-developed prose over sparse bullet lists; use bullets only for things that are genuinely lists.
+- Be specific and useful. Include concrete detail, realistic figures, and examples rather than vague generalities. Aim for the depth a real report/memo/spec would have.
+- Use inline emphasis where it helps: **bold** for key terms and *italic* for emphasis (supported in document paragraphs, list items, and table cells).
+
+Block types:
+- Word document (.docx) — reports, letters, memos, essays, plans, specs. Tag \`\`\`document with ONLY a JSON object:
+  {"title":"Document Title","subtitle":"optional one-line summary","body":[{"h1":"Section heading"},{"h2":"Subheading"},{"p":"A full paragraph of real prose."},{"ul":["item","item"]},{"ol":["step","step"]},{"quote":"a callout or notable quote"},{"table":{"headers":["Col A","Col B"],"rows":[["a1","b1"],["a2","b2"]]}}]}
+  Items render in order. Use headings to organize, paragraphs for the substance, tables for structured comparisons.
+- Spreadsheet (.xlsx) — tables, data, budgets, trackers, comparisons. Tag \`\`\`sheet with ONLY JSON:
+  {"name":"Sheet1","columns":["Column A","Column B"],"rows":[["a1","b1"],["a2","b2"]]}. Put real, complete data in the rows (numbers as numbers, not strings). Add a totals row where it makes sense.
 - CSV (.csv) — only if the user specifically asks for CSV: a \`\`\`csv block with raw comma-separated rows (header row first).
-- PowerPoint (.pptx) — a \`\`\`slides block containing ONLY a JSON array: [{"title":"...","subtitle":"...","bullets":["...","..."],"notes":"..."}]. subtitle and notes are optional.
+- PowerPoint (.pptx) — a \`\`\`slides block with ONLY a JSON array: [{"title":"...","subtitle":"...","bullets":["...","..."],"notes":"..."}]. Give each slide a focused message and 3–5 well-written bullets; subtitle and notes optional.
 - Web page (.html) — ONLY when the user explicitly asks for a web page, website, or HTML. Never use HTML as a generic wrapper for a document or dataset.
-- Code or plain text — for source code, config, or a text file, use a fenced block tagged with the correct language (\`\`\`python, \`\`\`json, \`\`\`md, \`\`\`txt, etc.).
+- Code or plain text — for source code/config/text, a fenced block tagged with the correct language (\`\`\`python, \`\`\`json, \`\`\`md, \`\`\`txt, etc.).
 
-If the user just says "make me a file" / "a document" without naming a format, produce a Word document (\`\`\`document). Choose the block type that matches what was asked: a document for prose, a spreadsheet for tabular data, slides for a presentation. Output ONLY the single code block for the requested file (a brief sentence before it is fine) — do not also paste the raw JSON or repeat the contents elsewhere.`;
+If the user just says "make me a file" / "a document" without naming a format, produce a Word document (\`\`\`document). Choose the block type that matches what was asked. Output ONLY the single code block for the requested file (a brief sentence before it is fine) — do not also paste the raw JSON or repeat the contents elsewhere.`;
 
 interface ResolvedKey {
   apiKey: string;

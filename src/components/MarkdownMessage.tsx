@@ -143,25 +143,49 @@ function SlidesCard({ raw }: { raw: string }) {
       const PptxGenJS = (await import("pptxgenjs")).default;
       const pptx = new PptxGenJS();
       pptx.layout = "LAYOUT_WIDE";
+      const BG = "0A0A0B", GOLD = "E8B85F", INK = "F6F4EE", MUTED = "A2A2AB";
+      const W = 13.33;
+
       slides.forEach((s, i) => {
         const slide = pptx.addSlide();
-        slide.background = { color: "0A0A0B" };
-        slide.addText(String(s.title ?? `Slide ${i + 1}`), {
-          x: 0.6, y: 0.5, w: 12, h: 1, fontSize: 30, bold: true, color: "E8B85F", fontFace: "Arial",
-        });
-        if (s.subtitle) {
-          slide.addText(String(s.subtitle), { x: 0.6, y: 1.5, w: 12, h: 0.6, fontSize: 16, color: "A2A2AB" });
-        }
-        const bullets = Array.isArray(s.bullets) ? s.bullets : [];
-        if (bullets.length) {
-          slide.addText(
-            bullets.map((b) => ({ text: String(b), options: { bullet: true, fontSize: 18, color: "F6F4EE", paraSpaceAfter: 8 } })),
-            { x: 0.9, y: s.subtitle ? 2.3 : 1.8, w: 11.4, h: 4.5, valign: "top" },
-          );
+        slide.background = { color: BG };
+        const isTitle = i === 0;
+
+        if (isTitle) {
+          // Cover slide — centered title, gold rule, subtitle.
+          slide.addText(String(s.title ?? "Presentation"), {
+            x: 0.8, y: 2.4, w: W - 1.6, h: 1.6, fontSize: 44, bold: true, color: GOLD, fontFace: "Arial", align: "center",
+          });
+          slide.addShape(pptx.ShapeType.line, { x: W / 2 - 1.2, y: 4.15, w: 2.4, h: 0, line: { color: GOLD, width: 2 } });
+          if (s.subtitle) slide.addText(String(s.subtitle), {
+            x: 1.2, y: 4.4, w: W - 2.4, h: 0.9, fontSize: 18, color: MUTED, align: "center", fontFace: "Arial",
+          });
+        } else {
+          // Content slide — accent bar, title, divider, bullets.
+          slide.addShape(pptx.ShapeType.rect, { x: 0.6, y: 0.62, w: 0.09, h: 0.62, fill: { color: GOLD } });
+          slide.addText(String(s.title ?? `Slide ${i + 1}`), {
+            x: 0.85, y: 0.5, w: W - 1.6, h: 0.9, fontSize: 28, bold: true, color: GOLD, fontFace: "Arial",
+          });
+          if (s.subtitle) slide.addText(String(s.subtitle), {
+            x: 0.85, y: 1.32, w: W - 1.6, h: 0.5, fontSize: 15, italic: true, color: MUTED, fontFace: "Arial",
+          });
+          slide.addShape(pptx.ShapeType.line, { x: 0.85, y: s.subtitle ? 1.85 : 1.5, w: W - 1.7, h: 0, line: { color: "3A3A3D", width: 1 } });
+          const bullets = Array.isArray(s.bullets) ? s.bullets : [];
+          if (bullets.length) {
+            slide.addText(
+              bullets.map((b) => ({ text: String(b), options: { bullet: { code: "2022", indent: 18 }, fontSize: 18, color: INK, paraSpaceAfter: 14 } })),
+              { x: 1.0, y: s.subtitle ? 2.15 : 1.8, w: W - 2.0, h: 5.0, valign: "top", fontFace: "Arial", lineSpacingMultiple: 1.1 },
+            );
+          }
+          // Footer: brand + slide number.
+          slide.addText("Tokeville", { x: 0.85, y: 7.0, w: 3, h: 0.3, fontSize: 10, color: "5A5A5D", fontFace: "Arial" });
+          slide.addText(String(i + 1), { x: W - 1.3, y: 7.0, w: 0.7, h: 0.3, fontSize: 10, color: "5A5A5D", align: "right", fontFace: "Arial" });
         }
         if (s.notes) slide.addNotes(String(s.notes));
       });
-      await pptx.writeFile({ fileName: "tokeville-presentation.pptx" });
+      const fname = `${slug(slides[0]?.title, "presentation")}.pptx`;
+      const blob = (await pptx.write({ outputType: "blob" })) as Blob;
+      saveBlob(blob, "application/vnd.openxmlformats-officedocument.presentationml.presentation", fname);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not build the deck");
     } finally {
@@ -210,8 +234,26 @@ function SlidesCard({ raw }: { raw: string }) {
 /* ── Word document card: a ```document JSON block → real .docx ─────────────── */
 type DocItem =
   | { h1: string } | { h2: string } | { h3: string }
-  | { p: string } | { ul: unknown[] } | { ol: unknown[] };
-interface DocSpec { title?: string; body?: DocItem[] }
+  | { p: string } | { ul: unknown[] } | { ol: unknown[] }
+  | { quote: string } | { table: { headers?: unknown[]; rows?: unknown[][] } };
+interface DocSpec { title?: string; subtitle?: string; body?: DocItem[] }
+
+/** Split a string with **bold** / *italic* markers into docx TextRun options. */
+function inlineRuns(text: string): Array<{ text: string; bold?: boolean; italics?: boolean }> {
+  const out: Array<{ text: string; bold?: boolean; italics?: boolean }> = [];
+  // Match **bold** or *italic*; everything else is a plain run.
+  const re = /\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index) });
+    if (m[1] != null) out.push({ text: m[1], bold: true });
+    else if (m[2] != null) out.push({ text: m[2], italics: true });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out.length ? out : [{ text }];
+}
 
 function DocumentCard({ raw }: { raw: string }) {
   const [building, setBuilding] = useState(false);
@@ -228,18 +270,116 @@ function DocumentCard({ raw }: { raw: string }) {
     setErr(null);
     setBuilding(true);
     try {
-      const { Document, Packer, Paragraph, HeadingLevel, TextRun } = await import("docx");
-      const paras: InstanceType<typeof Paragraph>[] = [];
-      if (doc.title) paras.push(new Paragraph({ text: doc.title, heading: HeadingLevel.TITLE }));
-      for (const item of doc.body ?? []) {
-        if ("h1" in item) paras.push(new Paragraph({ text: String(item.h1), heading: HeadingLevel.HEADING_1 }));
-        else if ("h2" in item) paras.push(new Paragraph({ text: String(item.h2), heading: HeadingLevel.HEADING_2 }));
-        else if ("h3" in item) paras.push(new Paragraph({ text: String(item.h3), heading: HeadingLevel.HEADING_3 }));
-        else if ("p" in item) paras.push(new Paragraph({ children: [new TextRun(String(item.p))] }));
-        else if ("ul" in item) for (const li of item.ul) paras.push(new Paragraph({ text: String(li), bullet: { level: 0 } }));
-        else if ("ol" in item) item.ol.forEach((li, i) => paras.push(new Paragraph({ text: `${i + 1}. ${String(li)}` })));
+      const docx = await import("docx");
+      const {
+        Document, Packer, Paragraph, HeadingLevel, TextRun, AlignmentType,
+        Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, LevelFormat,
+      } = docx;
+
+      const GOLD = "B8860B"; // deep gold for headings/accents
+      const INK = "1A1A1A";
+      const MUTED = "6B6B6B";
+      const runs = (t: string, extra: object = {}) =>
+        inlineRuns(t).map((r) => new TextRun({ text: r.text, bold: r.bold, italics: r.italics, font: "Calibri", ...extra }));
+
+      const children: (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] = [];
+
+      // Title block
+      if (doc.title) {
+        children.push(new Paragraph({
+          spacing: { after: doc.subtitle ? 60 : 240 },
+          children: [new TextRun({ text: doc.title, bold: true, size: 40, color: INK, font: "Calibri" })],
+        }));
       }
-      const document = new Document({ sections: [{ children: paras }] });
+      if (doc.subtitle) {
+        children.push(new Paragraph({
+          spacing: { after: 240 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: GOLD, space: 8 } },
+          children: [new TextRun({ text: doc.subtitle, italics: true, size: 24, color: MUTED, font: "Calibri" })],
+        }));
+      }
+
+      for (const item of doc.body ?? []) {
+        if ("h1" in item) {
+          children.push(new Paragraph({
+            heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 120 },
+            children: [new TextRun({ text: String(item.h1), bold: true, size: 30, color: GOLD, font: "Calibri" })],
+          }));
+        } else if ("h2" in item) {
+          children.push(new Paragraph({
+            heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 100 },
+            children: [new TextRun({ text: String(item.h2), bold: true, size: 26, color: INK, font: "Calibri" })],
+          }));
+        } else if ("h3" in item) {
+          children.push(new Paragraph({
+            heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 80 },
+            children: [new TextRun({ text: String(item.h3), bold: true, size: 23, color: MUTED, font: "Calibri" })],
+          }));
+        } else if ("p" in item) {
+          children.push(new Paragraph({
+            spacing: { after: 160, line: 276 }, alignment: AlignmentType.JUSTIFIED,
+            children: runs(String(item.p), { size: 22, color: INK }),
+          }));
+        } else if ("ul" in item) {
+          for (const li of item.ul) children.push(new Paragraph({
+            bullet: { level: 0 }, spacing: { after: 60, line: 276 },
+            children: runs(String(li), { size: 22, color: INK }),
+          }));
+        } else if ("ol" in item) {
+          item.ol.forEach((li) => children.push(new Paragraph({
+            numbering: { reference: "ol-num", level: 0 }, spacing: { after: 60, line: 276 },
+            children: runs(String(li), { size: 22, color: INK }),
+          })));
+        } else if ("quote" in item) {
+          children.push(new Paragraph({
+            spacing: { before: 120, after: 160 }, indent: { left: 360 },
+            border: { left: { style: BorderStyle.SINGLE, size: 18, color: GOLD, space: 12 } },
+            children: runs(String(item.quote), { italics: true, size: 22, color: MUTED }),
+          }));
+        } else if ("table" in item) {
+          const headers = (item.table.headers ?? []).map(String);
+          const rows = (item.table.rows ?? []).map((r) => (Array.isArray(r) ? r.map(String) : [String(r)]));
+          const cols = Math.max(headers.length, ...rows.map((r) => r.length), 1);
+          const border = { style: BorderStyle.SINGLE, size: 4, color: "D9D9D9" };
+          const borders = { top: border, bottom: border, left: border, right: border };
+          const tableRows: InstanceType<typeof TableRow>[] = [];
+          if (headers.length) {
+            tableRows.push(new TableRow({
+              tableHeader: true,
+              children: Array.from({ length: cols }, (_, c) => new TableCell({
+                shading: { type: ShadingType.CLEAR, fill: GOLD, color: "auto" },
+                margins: { top: 60, bottom: 60, left: 100, right: 100 },
+                children: [new Paragraph({ children: [new TextRun({ text: headers[c] ?? "", bold: true, size: 21, color: "FFFFFF", font: "Calibri" })] })],
+              })),
+            }));
+          }
+          rows.forEach((r, ri) => tableRows.push(new TableRow({
+            children: Array.from({ length: cols }, (_, c) => new TableCell({
+              shading: ri % 2 ? { type: ShadingType.CLEAR, fill: "F7F3E8", color: "auto" } : undefined,
+              margins: { top: 50, bottom: 50, left: 100, right: 100 },
+              children: [new Paragraph({ children: runs(r[c] ?? "", { size: 21, color: INK }) })],
+            })),
+          })));
+          children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders, rows: tableRows }));
+          children.push(new Paragraph({ spacing: { after: 120 }, children: [] }));
+        }
+      }
+
+      const document = new Document({
+        creator: "Tokeville",
+        styles: { default: { document: { run: { font: "Calibri", size: 22, color: INK } } } },
+        numbering: {
+          config: [{
+            reference: "ol-num",
+            levels: [{ level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.START,
+              style: { paragraph: { indent: { left: 360, hanging: 260 } } } }],
+          }],
+        },
+        sections: [{
+          properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
+          children,
+        }],
+      });
       const blob = await Packer.toBlob(document);
       saveBlob(blob, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", `${slug(doc.title, "document")}.docx`);
     } catch (e) {
@@ -300,17 +440,72 @@ function SheetCard({ raw, isCsv }: { raw: string; isCsv: boolean }) {
     setErr(null);
     setBusy(kind);
     try {
-      const XLSX = await import("xlsx");
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
       if (kind === "csv") {
-        const csv = isCsv ? raw : XLSX.utils.sheet_to_csv(ws);
+        // Quote fields containing comma/quote/newline per RFC 4180.
+        const csv = isCsv ? raw : aoa.map((row) =>
+          row.map((cell) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(","),
+        ).join("\r\n");
         saveBlob(csv, "text/csv", `${slug(name, "data")}.csv`);
-      } else {
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31) || "Sheet1");
-        const out = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
-        saveBlob(out, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", `${slug(name, "data")}.xlsx`);
+        return;
       }
+
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "Tokeville";
+      const ws = wb.addWorksheet(name.slice(0, 31) || "Sheet1", {
+        views: [{ state: "frozen", ySplit: 1 }],
+      });
+      const [header, ...body] = aoa;
+
+      // Detect a currency/number column from a cell like "$1,200.50" or "1,200".
+      const parseNum = (v: string): { num: number; currency: boolean } | null => {
+        const t = v.trim();
+        const currency = /^-?\$/.test(t);
+        const cleaned = t.replace(/[$,\s]/g, "");
+        if (cleaned === "" || !/^-?\d*\.?\d+%?$/.test(cleaned)) return null;
+        const n = Number(cleaned.replace("%", ""));
+        return Number.isFinite(n) ? { num: /%$/.test(cleaned) ? n / 100 : n, currency } : null;
+      };
+
+      // Header row — gold fill, white bold, centered.
+      const headerRow = ws.addRow(header);
+      headerRow.height = 22;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11, name: "Calibri" };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB8860B" } };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.border = { bottom: { style: "thin", color: { argb: "FF8C6508" } } };
+      });
+
+      // Data rows — number/currency detection, thin borders, zebra striping.
+      body.forEach((r, ri) => {
+        const cells = header.map((_, ci) => {
+          const parsed = parseNum(r[ci] ?? "");
+          return parsed ? parsed.num : (r[ci] ?? "");
+        });
+        const row = ws.addRow(cells);
+        row.eachCell((cell, ci) => {
+          const parsed = parseNum(r[ci - 1] ?? "");
+          cell.font = { size: 11, name: "Calibri", color: { argb: "FF1A1A1A" } };
+          cell.alignment = { vertical: "middle", horizontal: parsed ? "right" : "left" };
+          if (parsed?.currency) cell.numFmt = '$#,##0.00';
+          else if (parsed && /%/.test(r[ci - 1] ?? "")) cell.numFmt = "0.0%";
+          else if (parsed && Number.isInteger(parsed.num)) cell.numFmt = "#,##0";
+          if (ri % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7F3E8" } };
+          cell.border = { bottom: { style: "hair", color: { argb: "FFE0E0E0" } } };
+        });
+      });
+
+      // Auto-fit column widths from content length (clamped).
+      ws.columns.forEach((col, i) => {
+        let max = String(header[i] ?? "").length;
+        for (const r of body) max = Math.max(max, String(r[i] ?? "").length);
+        col.width = Math.min(Math.max(max + 3, 10), 48);
+      });
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: header.length } };
+
+      const buf = await wb.xlsx.writeBuffer();
+      saveBlob(buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", `${slug(name, "data")}.xlsx`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not build the spreadsheet");
     } finally {
