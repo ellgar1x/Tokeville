@@ -1,602 +1,68 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PROVIDERS, ProviderKey } from "@/lib/models";
-import { tok, usd, usdFromTokens } from "@/lib/format";
-import { createClient } from "@/lib/supabase/client";
-
-interface StoredKey {
-  id: string;
-  provider: string;
-  label: string;
-  base_url?: string | null;
-  budget_tokens?: number | null;
-  spent_tokens?: number | null;
-  owner_user_id?: string | null;
-  assigned_user_id?: string | null;
-  assigned_sub_account_id?: string | null;
-  created_at: string;
-}
-
-interface AssignTarget { userId: string; name: string }
-interface ProjectTarget { id: string; name: string }
-
-const API_KEY_SOURCES = [
-  {
-    key: "anthropic",
-    label: "Anthropic",
-    color: "#cc785c",
-    pricing: "Pay-as-you-go · Claude models",
-    url: "https://console.anthropic.com/settings/keys",
-  },
-  {
-    key: "openai",
-    label: "OpenAI",
-    color: "#10a37f",
-    pricing: "Pay-as-you-go · GPT-4o, o1, o3",
-    url: "https://platform.openai.com/api-keys",
-  },
-  {
-    key: "google",
-    label: "Google AI Studio",
-    color: "#4285f4",
-    pricing: "Free tier available · Gemini models",
-    url: "https://aistudio.google.com/app/apikey",
-  },
-  {
-    key: "mistral",
-    label: "Mistral AI",
-    color: "#f97316",
-    pricing: "Pay-as-you-go · Mistral models",
-    url: "https://console.mistral.ai/api-keys/",
-  },
-];
-
-const PROVIDER_OPTIONS: { key: ProviderKey; label: string; color: string; placeholder: string; needsUrl?: boolean }[] =
-  [
-    { key: "anthropic", label: "Anthropic", color: "#cc785c", placeholder: "sk-ant-…" },
-    { key: "openai", label: "OpenAI", color: "#10a37f", placeholder: "sk-…" },
-    { key: "google", label: "Google AI", color: "#4285f4", placeholder: "AIza…" },
-    {
-      key: "custom",
-      label: "Custom / OpenAI-compatible",
-      color: "#888",
-      placeholder: "sk-… or any key",
-      needsUrl: true,
-    },
-  ];
+import { PROVIDERS } from "@/lib/models";
 
 export function AIProviderSettings() {
-  const [keys, setKeys] = useState<StoredKey[]>([]);
+  const [active, setActive] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [form, setForm] = useState<{
-    provider: ProviderKey;
-    label: string;
-    apiKey: string;
-    baseUrl: string;
-    budgetUsd: string;
-  }>({ provider: "openai", label: "OpenAI", apiKey: "", baseUrl: "", budgetUsd: "" });
-  const [showForm, setShowForm] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editBudget, setEditBudget] = useState("");
-  const [editRemaining, setEditRemaining] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [members, setMembers] = useState<AssignTarget[]>([]);
-  const [projects, setProjects] = useState<ProjectTarget[]>([]);
-  const [assigningId, setAssigningId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/provider-keys")
+    fetch("/api/providers/available")
       .then((r) => r.json())
-      .then((d) => { setKeys(d.keys ?? []); setCurrentUserId(d.currentUserId ?? null); })
+      .then((d) => setActive(d.providers ?? []))
       .finally(() => setLoading(false));
-
-    // Delegation targets — RLS scopes these to the admin's own workspace.
-    const supabase = createClient();
-    supabase.from("workspace_members").select("user_id, display_name, role").then(({ data }) => {
-      setMembers((data ?? [])
-        .filter((m) => m.user_id)
-        .map((m) => ({ userId: m.user_id as string, name: `${m.display_name ?? "Member"}${m.role === "admin" ? " (admin)" : ""}` })));
-    });
-    supabase.from("sub_accounts").select("id, name").order("name").then(({ data }) => {
-      setProjects((data ?? []).map((a) => ({ id: a.id as string, name: a.name as string })));
-    });
   }, []);
-
-  async function assignKey(id: string, assignTo: string) {
-    setAssigningId(id);
-    const res = await fetch("/api/provider-keys", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, assignTo }),
-    });
-    const data = await res.json();
-    setAssigningId(null);
-    if (res.ok) setKeys((prev) => prev.map((k) => (k.id === id ? data.key : k)));
-  }
-
-  function assignmentValue(k: StoredKey): string {
-    if (k.assigned_sub_account_id) return `project:${k.assigned_sub_account_id}`;
-    if (k.assigned_user_id) return `user:${k.assigned_user_id}`;
-    return "shared";
-  }
-
-  function assignmentLabel(k: StoredKey): { text: string; tone: "gold" | "muted" } {
-    if (k.assigned_sub_account_id) {
-      const p = projects.find((x) => x.id === k.assigned_sub_account_id);
-      return { text: `Project · ${p?.name ?? "…"}`, tone: "gold" };
-    }
-    if (k.assigned_user_id) {
-      const m = members.find((x) => x.userId === k.assigned_user_id);
-      return { text: `Assigned · ${m?.name ?? "…"}`, tone: "gold" };
-    }
-    return { text: "Shared workspace-wide", tone: "muted" };
-  }
-
-  const selectedProviderOption = PROVIDER_OPTIONS.find((p) => p.key === form.provider)!;
-
-  async function addKey() {
-    setError(null);
-    if (!form.apiKey.trim()) { setError("API key is required."); return; }
-    if (selectedProviderOption.needsUrl && !form.baseUrl.trim()) {
-      setError("Base URL is required for custom providers.");
-      return;
-    }
-    setAdding(true);
-    const res = await fetch("/api/provider-keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        provider: form.provider,
-        label: form.label,
-        apiKey: form.apiKey,
-        baseUrl: form.baseUrl || undefined,
-        budgetUsd: form.budgetUsd ? parseFloat(form.budgetUsd) : undefined,
-      }),
-    });
-    const data = await res.json();
-    setAdding(false);
-    if (!res.ok) { setError(data.error); return; }
-    setKeys((prev) => [...prev, data.key]);
-    setForm({ provider: "openai", label: "OpenAI", apiKey: "", baseUrl: "", budgetUsd: "" });
-    setShowForm(false);
-    setSuccess("API key saved.");
-    setTimeout(() => setSuccess(null), 3000);
-  }
-
-  async function deleteKey(id: string) {
-    setDeleting(id);
-    await fetch(`/api/provider-keys?id=${id}`, { method: "DELETE" });
-    setKeys((prev) => prev.filter((k) => k.id !== id));
-    setDeleting(null);
-  }
-
-  function openEdit(k: StoredKey) {
-    setEditingId(k.id);
-    setEditError(null);
-    setEditBudget(k.budget_tokens != null ? String(usdFromTokens(k.budget_tokens)) : "");
-    setEditRemaining("");
-  }
-
-  async function saveEdit(id: string) {
-    setEditError(null);
-    setSavingEdit(true);
-    const body: { id: string; budgetUsd?: number | null; remainingUsd?: number } = { id };
-    body.budgetUsd = editBudget ? parseFloat(editBudget) : null;
-    if (editRemaining.trim()) body.remainingUsd = parseFloat(editRemaining);
-    const res = await fetch("/api/provider-keys", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    setSavingEdit(false);
-    if (!res.ok) { setEditError(data.error ?? "Could not save"); return; }
-    setKeys((prev) => prev.map((k) => (k.id === id ? data.key : k)));
-    setEditingId(null);
-  }
-
-  const inputClass =
-    "h-10 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm outline-none transition-colors duration-200 placeholder:text-subtle focus:border-gold/50 focus:ring-2 focus:ring-gold/15";
-
-  const providerColor = (key: string) =>
-    PROVIDER_OPTIONS.find((p) => p.key === key)?.color ??
-    PROVIDERS.find((p) => p.key === key)?.color ??
-    "#888";
-
-  const providerLabel = (key: string) =>
-    PROVIDER_OPTIONS.find((p) => p.key === key)?.label ??
-    PROVIDERS.find((p) => p.key === key)?.label ??
-    key;
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.3)] sm:p-7">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-sm font-semibold tracking-tight">AI Providers</h2>
-          <p className="mt-0.5 text-xs text-subtle">
-            Add API keys to unlock models in chat. Keys are stored server-side and never
-            sent to the browser.
-          </p>
-        </div>
-        {!showForm && (
-          <button
-            onClick={() => { setShowForm(true); setError(null); }}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-xs font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all duration-200 hover:from-gold hover:to-gold-deep cursor-pointer"
-          >
-            + Add key
-          </button>
-        )}
-      </div>
-
-      {/* Add form */}
-      {showForm && (
-        <div className="mt-5 space-y-3 rounded-xl border border-border-strong bg-surface-2 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-subtle">New API key</p>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-subtle">Provider</label>
-              <select
-                value={form.provider}
-                onChange={(e) => {
-                  const p = e.target.value as ProviderKey;
-                  setForm((f) => ({
-                    ...f,
-                    provider: p,
-                    label: PROVIDER_OPTIONS.find((o) => o.key === p)?.label ?? p,
-                  }));
-                }}
-                className="h-10 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm outline-none focus:border-gold/50 cursor-pointer"
-              >
-                {PROVIDER_OPTIONS.map((p) => (
-                  <option key={p.key} value={p.key}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-subtle">Label</label>
-              <input
-                value={form.label}
-                onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-                placeholder="e.g. Production OpenAI"
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-subtle">API key</label>
-              <input
-                type="password"
-                value={form.apiKey}
-                onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                placeholder={selectedProviderOption.placeholder}
-                autoComplete="off"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-subtle">Monthly budget (optional)</label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-subtle">$</span>
-                <input
-                  value={form.budgetUsd}
-                  onChange={(e) => setForm((f) => ({ ...f, budgetUsd: e.target.value.replace(/[^0-9.]/g, "") }))}
-                  placeholder="No cap"
-                  inputMode="decimal"
-                  className={`${inputClass} pl-7 font-mono`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {selectedProviderOption.needsUrl && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-subtle">
-                Base URL <span className="text-danger">*</span>
-              </label>
-              <input
-                value={form.baseUrl}
-                onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
-                placeholder="https://api.your-provider.com/v1"
-                className={inputClass}
-              />
-              <p className="mt-1 text-[11px] text-subtle">
-                Any OpenAI-compatible endpoint works (Ollama, Together, Groq, LM Studio, etc.)
-              </p>
-            </div>
-          )}
-
-          {error && (
-            <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              onClick={addKey}
-              disabled={adding}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-xs font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:opacity-40 cursor-pointer"
-            >
-              {adding ? "Saving…" : "Save key"}
-            </button>
-            <button
-              onClick={() => { setShowForm(false); setError(null); }}
-              className="inline-flex h-9 items-center rounded-lg border border-border px-4 text-xs font-medium text-muted transition-colors hover:bg-surface-2 cursor-pointer"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {success && (
-        <p className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400">
-          {success}
-        </p>
-      )}
-
-      {/* Keys list */}
-      <div className="mt-4">
-        {loading ? (
-          <p className="text-xs text-subtle">Loading…</p>
-        ) : keys.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border py-8 text-center">
-            <p className="text-sm font-medium text-muted">No API keys yet</p>
-            <p className="mt-1 text-xs text-subtle">
-              Add a key to start chatting with GPT, Gemini, or other models.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-2.5">
-            {keys.map((k) => {
-              const budget = k.budget_tokens ?? null;
-              const spent = Number(k.spent_tokens ?? 0);
-              const ratio = budget && budget > 0 ? Math.min(spent / budget, 1) : 0;
-              const over = budget != null && spent >= budget;
-              const barColor = over ? "bg-danger" : ratio >= 0.8 ? "bg-warning" : "bg-gold";
-              const isMine = !!currentUserId && k.owner_user_id === currentUserId;
-              return (
-                <li key={k.id} className="rounded-xl border border-border bg-surface-2 p-3.5">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ background: providerColor(k.provider) }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-2 text-sm font-medium">
-                        {k.label}
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${isMine ? "bg-gold-soft text-gold" : "bg-surface text-subtle"}`}>
-                          {isMine ? "You" : "Workspace"}
-                        </span>
-                      </p>
-                      <p className="text-xs text-subtle">
-                        {providerLabel(k.provider)}
-                        {k.base_url && (<> · <span className="font-mono">{k.base_url}</span></>)}
-                        {" · "}added {new Date(k.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className="hidden font-mono text-xs text-subtle sm:inline">sk-••••••••</span>
-                    <button
-                      onClick={() => (editingId === k.id ? setEditingId(null) : openEdit(k))}
-                      className="shrink-0 rounded px-2 py-1 text-xs text-muted opacity-70 transition-opacity hover:opacity-100 hover:text-gold cursor-pointer"
-                    >
-                      {editingId === k.id ? "Close" : "Edit"}
-                    </button>
-                    <button
-                      onClick={() => deleteKey(k.id)}
-                      disabled={deleting === k.id}
-                      className="shrink-0 rounded px-2 py-1 text-xs text-danger opacity-60 transition-opacity hover:opacity-100 disabled:opacity-30 cursor-pointer"
-                    >
-                      {deleting === k.id ? "…" : "Remove"}
-                    </button>
-                  </div>
-
-                  {/* Per-key budget */}
-                  <div className="mt-3">
-                    {budget != null ? (
-                      <>
-                        <div className="flex items-baseline justify-between text-[11px]">
-                          <span className={over ? "font-medium text-danger" : "text-muted"}>
-                            {over ? "Budget used up" : `${usd(usdFromTokens(Math.max(budget - spent, 0)), { cents: true })} left`}
-                          </span>
-                          <span className="tnum font-mono text-subtle">
-                            {tok(spent)} / {tok(budget)} · {Math.round(ratio * 100)}%
-                          </span>
-                        </div>
-                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface">
-                          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${ratio * 100}%` }} />
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-[11px] text-subtle">
-                        No budget cap · {tok(spent)} spent so far
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Delegation — pin this key to a person or project */}
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${assignmentLabel(k).tone === "gold" ? "bg-gold-soft text-gold" : "bg-surface text-subtle"}`}>
-                      <KeyGlyph className="h-3 w-3" />
-                      {assignmentLabel(k).text}
-                    </span>
-                    <label className="ml-auto flex items-center gap-1.5 text-[11px] text-subtle">
-                      Delegate to
-                      <select
-                        value={assignmentValue(k)}
-                        disabled={assigningId === k.id}
-                        onChange={(e) => assignKey(k.id, e.target.value)}
-                        className="h-7 rounded-lg border border-border-strong bg-surface px-2 text-[11px] outline-none focus:border-gold/50 disabled:opacity-50 cursor-pointer"
-                      >
-                        <option value="shared">Whole workspace (shared)</option>
-                        {members.length > 0 && (
-                          <optgroup label="A person">
-                            {members.map((m) => (
-                              <option key={m.userId} value={`user:${m.userId}`}>{m.name}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {projects.length > 0 && (
-                          <optgroup label="A project">
-                            {projects.map((p) => (
-                              <option key={p.id} value={`project:${p.id}`}>{p.name}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </select>
-                    </label>
-                  </div>
-
-                  {/* Edit budget + reconcile to actual provider balance */}
-                  {editingId === k.id && (
-                    <div className="mt-3 rounded-lg border border-border-strong bg-surface p-3">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <label className="mb-1 block text-[11px] font-medium text-subtle">Monthly budget (USD)</label>
-                          <div className="relative">
-                            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-subtle">$</span>
-                            <input
-                              value={editBudget}
-                              onChange={(e) => setEditBudget(e.target.value.replace(/[^0-9.]/g, ""))}
-                              placeholder="No cap"
-                              inputMode="decimal"
-                              className="h-9 w-full rounded-lg border border-border-strong bg-surface-2 pl-6 pr-2 font-mono text-sm outline-none focus:border-gold/50"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-[11px] font-medium text-subtle">Balance remaining now (USD)</label>
-                          <div className="relative">
-                            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-subtle">$</span>
-                            <input
-                              value={editRemaining}
-                              onChange={(e) => setEditRemaining(e.target.value.replace(/[^0-9.]/g, ""))}
-                              placeholder="from provider dashboard"
-                              inputMode="decimal"
-                              className="h-9 w-full rounded-lg border border-border-strong bg-surface-2 pl-6 pr-2 font-mono text-sm outline-none focus:border-gold/50"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <p className="mt-2 text-[11px] text-subtle">
-                        Reconcile: enter the balance your provider dashboard shows and Tokeville will sync this key’s spend to match.
-                      </p>
-                      {editError && <p className="mt-2 text-[11px] font-medium text-danger">{editError}</p>}
-                      <div className="mt-2.5 flex gap-2">
-                        <button
-                          onClick={() => saveEdit(k.id)}
-                          disabled={savingEdit}
-                          className="inline-flex h-8 items-center rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3 text-xs font-semibold text-[#0a0a0b] transition-all hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer"
-                        >
-                          {savingEdit ? "Saving…" : "Save"}
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-2 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {/* Get API Keys marketplace */}
-      <div className="mt-6">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-subtle">
-          Get API keys
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {API_KEY_SOURCES.map((src) => (
-            <div
-              key={src.key}
-              className="flex items-start gap-3 rounded-xl border border-border bg-surface-2 p-3.5"
-            >
-              <span
-                className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ background: src.color }}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">{src.label}</p>
-                <p className="mt-0.5 text-[11px] text-subtle">{src.pricing}</p>
-              </div>
-              <a
-                href={src.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 inline-flex h-8 items-center gap-1 rounded-lg border border-border-strong bg-surface px-3 text-xs font-medium text-muted transition-colors hover:border-gold/40 hover:text-gold"
-              >
-                Get key ↗
-              </a>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-[11px] text-subtle">
-          Paste your key into the form above — it's encrypted at rest and never leaves your server.
-        </p>
-        <p className="mt-1.5 text-[11px] text-subtle">
-          <span className="font-medium text-muted">Delegation:</span> assign a key to a person or a
-          project so no single key serves your whole organization. Project assignment wins when a
-          project&apos;s chat runs; otherwise the caller&apos;s own assigned key, then any shared key.
+      <div>
+        <h2 className="text-sm font-semibold tracking-tight">AI Models</h2>
+        <p className="mt-0.5 text-xs text-subtle">
+          Powered by Tokeville — nothing to configure. Usage is metered automatically against
+          your treasury and project budgets.
         </p>
       </div>
 
-      {/* Model coverage */}
       <div className="mt-5 rounded-xl border border-border bg-surface-2 p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-subtle">
           Available models by provider
         </p>
-        <div className="space-y-2">
-          {PROVIDERS.map((p) => {
-            const hasKey = keys.some((k) => k.provider === p.key);
-            return (
-              <div key={p.key} className="flex items-start gap-3">
-                <span
-                  className="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full"
-                  style={{ background: p.color, opacity: hasKey ? 1 : 0.3 }}
-                />
-                <div className="min-w-0">
-                  <p className={`text-xs font-semibold ${hasKey ? "" : "text-subtle"}`}>
-                    {p.label}
-                    {hasKey && (
-                      <span className="ml-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-1 py-0.5 text-[10px] font-medium text-emerald-400">
-                        active
-                      </span>
-                    )}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-subtle">
-                    {p.models.map((m) => m.label).join(", ")}
-                  </p>
+        {loading ? (
+          <p className="text-xs text-subtle">Loading…</p>
+        ) : (
+          <div className="space-y-2">
+            {PROVIDERS.map((p) => {
+              const hasKey = active.includes(p.key);
+              return (
+                <div key={p.key} className="flex items-start gap-3">
+                  <span
+                    className="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: p.color, opacity: hasKey ? 1 : 0.3 }}
+                  />
+                  <div className="min-w-0">
+                    <p className={`text-xs font-semibold ${hasKey ? "" : "text-subtle"}`}>
+                      {p.label}
+                      {hasKey ? (
+                        <span className="ml-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-1 py-0.5 text-[10px] font-medium text-emerald-400">
+                          active
+                        </span>
+                      ) : (
+                        <span className="ml-1.5 rounded border border-border-strong px-1 py-0.5 text-[10px] font-medium text-subtle">
+                          not yet enabled
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-subtle">
+                      {p.models.map((m) => m.label).join(", ")}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
-  );
-}
-
-function KeyGlyph({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="5.5" cy="5.5" r="3" />
-      <path d="M7.6 7.6 13 13m-2-2 1.5-1.5M9.5 9.5 11 8" />
-    </svg>
   );
 }

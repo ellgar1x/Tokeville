@@ -6,17 +6,13 @@ import { ChatWorkspace } from "@/components/ChatWorkspace";
 
 export default function ChatPage() {
   const { state, workspaceId } = useDemo();
-  const [availableProviders, setAvailableProviders] = useState<string[]>(["anthropic"]);
+  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
 
   useEffect(() => {
-    fetch("/api/provider-keys")
+    fetch("/api/providers/available")
       .then((r) => r.json())
-      .then((d) => {
-        const providers: string[] = (d.keys ?? []).map((k: { provider: string }) => k.provider);
-        if (!providers.includes("anthropic")) providers.push("anthropic");
-        setAvailableProviders(providers);
-      })
-      .catch(() => setAvailableProviders(["anthropic"]));
+      .then((d) => setAvailableProviders(d.providers ?? []))
+      .catch(() => setAvailableProviders([]));
   }, []);
 
   return (

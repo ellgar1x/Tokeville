@@ -51,15 +51,11 @@ export default function MemberPage() {
   useEffect(() => { setPrimaryColor(state.primaryColor); }, [state.primaryColor]);
   useEffect(() => { setSecondaryColor(state.secondaryColor); }, [state.secondaryColor]);
   const [activeProject, setActiveProject] = useState(projects[0]?.id ?? "");
-  const [availableProviders, setAvailableProviders] = useState<string[]>(["anthropic"]);
+  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
   useEffect(() => {
-    fetch("/api/provider-keys")
+    fetch("/api/providers/available")
       .then((r) => r.json())
-      .then((d) => {
-        const providers: string[] = (d.keys ?? []).map((k: { provider: string }) => k.provider);
-        if (!providers.includes("anthropic")) providers.push("anthropic");
-        setAvailableProviders(providers);
-      })
+      .then((d) => setAvailableProviders(d.providers ?? []))
       .catch(() => {});
   }, []);
 

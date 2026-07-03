@@ -41,7 +41,9 @@ Environment (`.env.local`, git-ignored, server-trusted values never use NEXT_PUB
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://qvpgwaluxztxazzebglc.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_…   # publishable key, safe for the browser
-ANTHROPIC_API_KEY=                                # SERVER ONLY — paste a key to enable chat
+PLATFORM_ANTHROPIC_API_KEY=                       # SERVER ONLY — Tokeville's own funded key, powers ALL Team-tier chat
+PLATFORM_OPENAI_API_KEY=                          # optional — unset means OpenAI shows "not yet enabled"
+PLATFORM_GOOGLE_API_KEY=                          # optional — unset means Google shows "not yet enabled"
 ```
 
 **Test logins** (demo data; admin Settings → "Reset demo data" restores seed):
@@ -79,8 +81,11 @@ their own auth).
 `app_metadata.workspace_type` so proxy + layout branch without a query. Chosen at admin
 sign-up, switchable anytime (`set_workspace_type` RPC).
 
-- **Team** — the metered model: pay *all* AI spend through Tokeville (deposit/buy tokens →
-  metered chat deducts per call). Tokeville earns via the per-transaction **platform fee**.
+- **Team** — full reseller model: Tokeville holds its own funded provider API keys
+  (`src/lib/platformKeys.ts`, `PLATFORM_<PROVIDER>_API_KEY` env vars) and ALL chat routes
+  through them, never a customer-supplied key. Deposited TOK is real purchasing power backing
+  that spend, not just an internal counter — Tokeville earns the per-transaction **platform
+  fee** as genuine margin on money actually flowing through the platform.
 - **Institution** — for orgs with their own/contracted (fixed-cost) AI. Admins budget & track
   that spend by department in USD (`departments`, `spend_entries`, `record_spend` RPC → 80%
   `budget_80` alerts); lives at `/institution`. Monetized by a **Stripe subscription**
@@ -185,9 +190,10 @@ State: a server component loads data via `lib/db.ts` and passes it to a client s
 - Members see it under "Company AI" and can meter usage against it. Admin-only to add
   (DB-enforced: members have SELECT-only on custom providers).
 
-**Real AI chat (Anthropic)**
-- `/chat` (admin) and on `/member`. Routes through Tokeville's own Anthropic key
-  **server-side only** — users never connect their own Claude accounts (nothing to steal).
+**Real AI chat — full reseller model**
+- `/chat` (admin) and on `/member`. Routes through **Tokeville's own platform keys**
+  (`src/lib/platformKeys.ts`) **server-side only** — customers never add or connect their own
+  provider keys (nothing to steal, and TOK deposits are what actually pay for the real usage).
 - **Streams** the reply token-by-token (SSE: `delta` events then a final `done` event).
   `src/lib/chatStream.ts` consumes it; both ChatPanel and ChatWorkspace render incrementally.
 - Assistant replies render as **markdown** (`src/components/MarkdownMessage.tsx`,
@@ -198,8 +204,10 @@ State: a server component loads data via `lib/db.ts` and passes it to a client s
   at the treasury rate (`tokensFromUsd`), deducts that from the sub-account via `use_tokens`,
   and logs a `Chat · <model>` ledger entry. The realtime subscription updates balances live.
 - **Privacy: only token counts are persisted — message content is never written to the DB.**
-- Requires `ANTHROPIC_API_KEY` to be set (currently empty → chat returns a "not configured"
-  notice until a key is added).
+- Requires `PLATFORM_<PROVIDER>_API_KEY` to be set per provider; an unconfigured provider
+  returns a clean 503 ("isn't enabled on Tokeville yet") rather than erroring. Settings →
+  "AI Models" (`AIProviderSettings`, no add-key form) shows which providers are live —
+  nothing for the customer to configure.
 
 ---
 

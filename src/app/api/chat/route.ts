@@ -3,9 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
 import { findModel, type ModelDef, type ProviderDef } from "@/lib/models";
-import { decryptSecret } from "@/lib/crypto";
+import { getPlatformKey } from "@/lib/platformKeys";
 import { tokensFromUsd } from "@/lib/format";
 
 const MAX_MESSAGES = 50;
@@ -71,56 +70,6 @@ If the user just says "make me a file" / "a document" without naming a format, p
 interface ResolvedKey {
   apiKey: string;
   baseUrl?: string | null;
-  /** DB provider_api_keys.id when a stored key is used; null for the platform key. */
-  keyId: string | null;
-  /** Per-key budget in TOK (null = no cap); undefined for the platform key. */
-  budgetTokens?: number | null;
-  spentTokens?: number;
-}
-
-/**
- * Resolve which key serves this request — STRICTLY within the caller's workspace.
- * Delegation-aware precedence:
- *   1. a key assigned to the PROJECT being billed (sub-account delegation)
- *   2. a key assigned to the CALLER (person delegation)
- *   3. the caller's own un-delegated key
- *   4. any un-delegated (shared) workspace key
- * Keys delegated to a different person or project are never used — so one key
- * doesn't have to serve the whole workspace. Uses the service client because
- * members can't SELECT workspace keys under RLS (the route has already
- * authenticated the caller and scoped everything to their workspace; key
- * material never leaves the server). No cross-workspace or platform fallback.
- */
-async function getProviderKey(
-  workspaceId: string,
-  userId: string,
-  provider: string,
-  billedSubAccountId: string | null,
-): Promise<ResolvedKey | null> {
-  const service = createServiceClient();
-  const { data: keys } = await service
-    .from("provider_api_keys")
-    .select("id, api_key, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id")
-    .eq("workspace_id", workspaceId)
-    .eq("provider", provider)
-    .order("created_at");
-  if (!keys?.length) return null;
-
-  const shared = (k: (typeof keys)[number]) => !k.assigned_user_id && !k.assigned_sub_account_id;
-  const chosen =
-    (billedSubAccountId ? keys.find((k) => k.assigned_sub_account_id === billedSubAccountId) : undefined) ??
-    keys.find((k) => k.assigned_user_id === userId) ??
-    keys.find((k) => shared(k) && k.owner_user_id === userId) ??
-    keys.find(shared);
-  if (!chosen) return null;
-
-  return {
-    apiKey: decryptSecret(chosen.api_key),
-    baseUrl: chosen.base_url,
-    keyId: chosen.id as string,
-    budgetTokens: chosen.budget_tokens === null ? null : Number(chosen.budget_tokens),
-    spentTokens: Number(chosen.spent_tokens),
-  };
 }
 
 /** Stream text deltas from Anthropic, recording exact token usage as it arrives. */
@@ -385,19 +334,11 @@ export async function POST(request: Request) {
   // Always append the artifact guide so file/pptx generation works.
   const systemPrompt = (reqSystemPrompt ?? modelDef.systemPrompt ?? DEFAULT_SYSTEM) + ARTIFACT_GUIDE;
 
-  const creds = await getProviderKey(workspaceId, user.id, provider.key, isPersonal ? null : subAccountId);
+  const creds: ResolvedKey | null = getPlatformKey(provider.key);
   if (!creds) {
     return NextResponse.json(
-      { error: `No ${provider.label} key is available for this budget. Add one in Settings → AI Providers, or ask an admin to assign one to you or this project.` },
+      { error: `${provider.label} isn't enabled on Tokeville yet — contact support.` },
       { status: 503 },
-    );
-  }
-
-  // Enforce the specific key's own budget (when it has one), before any AI cost.
-  if (creds.keyId && creds.budgetTokens != null && (creds.spentTokens ?? 0) >= creds.budgetTokens) {
-    return NextResponse.json(
-      { error: "This API key's budget is used up. Raise its budget in Settings → AI Providers, or use another key." },
-      { status: 402 },
     );
   }
 
@@ -441,15 +382,6 @@ export async function POST(request: Request) {
           });
       if (rpcError) {
         console.error("[chat] token deduction RPC failed", { subAccountId, costTok, isPersonal, error: rpcError.message });
-      }
-
-      // Also record the spend against the specific API key used (per-key budget view).
-      if (creds.keyId) {
-        const { error: keyErr } = await supabase.rpc("record_key_spend", {
-          p_key_id: creds.keyId,
-          p_amount: costTok,
-        });
-        if (keyErr) console.error("[chat] record_key_spend failed", { keyId: creds.keyId, error: keyErr.message });
       }
 
       send({

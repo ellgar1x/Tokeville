@@ -16,8 +16,11 @@ those budgets — across providers (Anthropic, OpenAI, Google), through one chat
 - Live on Vercel, GitHub repo `ellgar1x/Tokeville`. Deploys on push to `main`.
 
 ### Two product tiers (chosen at admin sign-up, switchable in Settings)
-- **Team** (default): pay ALL your AI spend through Tokeville — deposit/buy tokens, budget
-  them, meter every call. Tokeville earns via a **5% platform fee** on deposits.
+- **Team** (default) — **full reseller model (2026-07-03)**: Tokeville holds its own funded
+  provider API keys ("platform keys") and ALL chat routes through those, not customer keys.
+  Deposited TOK is real purchasing power backing that spend — not just an internal counter.
+  Tokeville earns via a **5% platform fee** on deposits, which is now a genuine margin on
+  money that actually flows through the platform. See §3.
 - **Institutional**: for orgs with their own/contracted (fixed-cost) AI. Budget & track that
   spend **by department** in USD; log manually or via CSV; 80% budget alerts. Monetized by
   **per-seat Stripe subscriptions** (`src/lib/plans.ts` is the source of truth): Starter
@@ -68,29 +71,47 @@ Run: `cd tokeville && npm run dev`. Build check: `npm run build`.
 
 ## 3. How metering works (this is the core; get it right)
 
-Chat flow (`/api/chat`): authenticate → resolve which **provider API key** to use (STRICT to
-the caller's workspace — see security note) → **pre-flight balance/budget gate** → stream from
-the provider → read **exact input/output tokens** from the response → compute
-`costUsd = in/1e6*inputPer1M + out/1e6*outputPer1M` → `costTok = round(costUsd * 100000)` →
-deduct.
+**Full reseller model (2026-07-03): TOK deposits are what actually pay for AI usage.**
+Previously, buying TOK only credited an internal ledger while the real provider bill was
+paid separately by a customer-supplied key (BYOK) — meaning the 5% "platform fee" wasn't a
+fee on any real transaction. Fixed by making Tokeville the real payment intermediary:
+Tokeville holds its own funded provider keys ("platform keys", `src/lib/platformKeys.ts`,
+env vars `PLATFORM_ANTHROPIC_API_KEY` / `PLATFORM_OPENAI_API_KEY` / `PLATFORM_GOOGLE_API_KEY`,
+server-only). ALL Team-tier chat routes through these — never a customer-stored key.
+
+Chat flow (`/api/chat`): authenticate → **pre-flight balance/budget gate** (BEFORE any AI
+call — this is now the real financial control, not just internal bookkeeping) →
+`getPlatformKey(provider)` → stream from the provider → read **exact input/output tokens**
+from the response → compute `costUsd = in/1e6*inputPer1M + out/1e6*outputPer1M` →
+`costTok = round(costUsd * 100000)` → deduct.
 
 Billing target (`subAccountId` in the request body):
 - a **sub-account** id → `use_tokens` RPC (deduct budget + burn treasury + log activity + dynamic top-up/alerts).
 - `"personal"` → `use_tokens_personal` RPC (draw from **unallocated treasury**, admin-only, no project).
-- Insufficient funds → **402**; the chat UI shows a prominent "Insufficient balance → Deposit funds" banner.
+- Insufficient funds → **402** before any provider call is made; the chat UI shows a
+  prominent "Insufficient balance → Deposit funds" banner.
+- A provider with no platform key configured → clean **503** ("`<Provider>` isn't enabled on
+  Tokeville yet — contact support"), not a raw error. Only Anthropic is funded right now
+  (bootstrapped from elliot's own key for local/demo testing — **a real deployment needs
+  Tokeville's own corporate-funded keys**, not a repurposed personal one). OpenAI/Google show
+  "not yet enabled" in Settings → AI Models until real keys are added.
 
-**Per-key budgets + delegation:** each row in `provider_api_keys` has `owner_user_id`,
-`budget_tokens` (null = no cap), `spent_tokens`, and (2026-07-03) `assigned_user_id` /
-`assigned_sub_account_id` for **delegation** — an admin can pin a key to one person or one
-project so a single key never serves the whole workspace. Chat key resolution precedence
-(`getProviderKey` in `api/chat/route.ts`, uses the **service client** since members can't
-SELECT workspace keys under RLS): key assigned to the billed **project** → key assigned to
-the **caller** → caller's own un-delegated key → any shared (un-delegated) key. Enforces the
-key's budget (402 when used up), records per-key spend via `record_key_spend`. UI:
-`AIProviderSettings` (Settings → team admins only; institution admins are proxied to
-`/institution` and don't use keys) shows a per-key budget bar, an Edit/Reconcile form, and a
-**"Delegate to"** dropdown (Whole workspace / a person / a project). PATCH validates the target
-is in the caller's workspace. Delegating to a non-member/foreign project → 400.
+**Known residual risk (disclosed, not fully solved):** the TOK deduction happens *after* the
+AI call completes (exact cost needs real usage counts), so the pre-flight check is
+"balance > 0," not "balance covers this call's worst case." A workspace at very low balance
+could trigger one real (small) provider charge slightly exceeding their remaining TOK before
+the *next* call is blocked. Bounded, not unbounded — full escrow/reservation logic would be a
+bigger follow-up if it matters at scale.
+
+**Superseded:** the per-key budget + delegation feature (assign a key to a person/project)
+built earlier this session no longer applies for standard providers — there's only one pooled
+platform key per provider now, so there's nothing to delegate. `provider_api_keys` (with its
+`assigned_user_id`/`assigned_sub_account_id` columns), `/api/provider-keys`, and
+`record_key_spend` are left in the schema **unused but intact** (non-destructive — easy to
+revive later e.g. as an enterprise BYOK opt-out). `AIProviderSettings` is now a simple
+read-only "which providers are Tokeville-enabled" panel, no add-key form.
+`project_members` (unchanged) remains the real access control for who can bill to which
+project.
 
 **Pricing is a hardcoded rate card** (`models.ts`), because providers bill deterministically
 (`tokens × published price`, same for everyone). So a correct table = exact match, universally,
@@ -127,8 +148,9 @@ connected_accounts, profiles.
 ## 5. Demo account & test data
 
 - **`elliot@thegarcias.us` / `tokeville123`** — the ONE demo account (workspace "Northwind Labs",
-  populated). It has a **real Anthropic key** stored (label "Anthropic — $5 test key", $5 budget,
-  reconciled to the real dashboard remaining). Everyone else starts empty.
+  populated). Its old BYOK key row (label "Anthropic — $5 test key") still exists in
+  `provider_api_keys` but is now unused by chat — its decrypted value was reused to bootstrap
+  `PLATFORM_ANTHROPIC_API_KEY` for testing (see §3). Everyone else starts empty.
 - Institution demo: convert in Settings → paywall → (Stripe test card `4242 4242 4242 4242`).
 
 ---
@@ -148,12 +170,18 @@ has demo); **cross-tenant key-leak fix** (removed shared platform-key fallback).
 
 ## 7. OPEN ITEMS / watch-outs
 
-1. **Vercel env `ANTHROPIC_API_KEY`** is now UNUSED by chat (shared-key fallback removed). It's
-   the user's personal $5 key set as a "platform" key — consider removing it from Vercel to avoid
-   confusion. Chat now requires each workspace to add its **own** key in Settings → AI Providers.
+1. **NEEDS ACTION: add `PLATFORM_ANTHROPIC_API_KEY` to Vercel production env.** The full
+   reseller model (§3) requires it — it's set locally in `.env.local` (bootstrapped from
+   elliot's own key, demo-only) but Claude has no Vercel access to set it in production.
+   Without it, Team-tier chat will 503 in prod with "Anthropic isn't enabled on Tokeville
+   yet." For a real launch, replace it with Tokeville's own corporate-funded Anthropic key
+   (not a repurposed personal one) — same for `PLATFORM_OPENAI_API_KEY` /
+   `PLATFORM_GOOGLE_API_KEY` when those providers get funded.
 2. **Provider prices can drift** if a provider changes rates — the rate card in `models.ts` is
-   the single source of truth; update it (and re-verify with web search) when needed. The manual
-   **Reconcile** control on each key is the per-user safety net.
+   the single source of truth; update it (and re-verify with web search) when needed. Since
+   TOK now backs real spend, a stale rate card means Tokeville could be over/under-collecting
+   against its actual provider bill — there's no more per-key manual Reconcile safety net
+   (that was BYOK-era); the rate card being exactly right now matters more, not less.
 3. ~~elliot's stored Anthropic key is plaintext~~ — DONE (re-encrypted 2026-07-02; verified
    via live chat). NOTE: production (Vercel) must have the same `ENCRYPTION_KEY` env set or
    prod chat can't decrypt stored keys — verify in the Vercel dashboard.
