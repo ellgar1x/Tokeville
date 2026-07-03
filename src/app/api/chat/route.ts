@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { findModel, type ModelDef, type ProviderDef } from "@/lib/models";
 import { decryptSecret } from "@/lib/crypto";
 import { tokensFromUsd } from "@/lib/format";
@@ -79,37 +80,47 @@ interface ResolvedKey {
 
 /**
  * Resolve which key serves this request — STRICTLY within the caller's workspace.
- * Preference: the caller's OWN stored key for the provider → any key in the same
- * workspace. No cross-workspace or shared platform-key fallback (tenant isolation).
- * Returning the row id lets the caller enforce + record that key's budget.
+ * Delegation-aware precedence:
+ *   1. a key assigned to the PROJECT being billed (sub-account delegation)
+ *   2. a key assigned to the CALLER (person delegation)
+ *   3. the caller's own un-delegated key
+ *   4. any un-delegated (shared) workspace key
+ * Keys delegated to a different person or project are never used — so one key
+ * doesn't have to serve the whole workspace. Uses the service client because
+ * members can't SELECT workspace keys under RLS (the route has already
+ * authenticated the caller and scoped everything to their workspace; key
+ * material never leaves the server). No cross-workspace or platform fallback.
  */
 async function getProviderKey(
-  supabase: Awaited<ReturnType<typeof createClient>>,
   workspaceId: string,
   userId: string,
   provider: string,
+  billedSubAccountId: string | null,
 ): Promise<ResolvedKey | null> {
-  const { data: keys } = await supabase
+  const service = createServiceClient();
+  const { data: keys } = await service
     .from("provider_api_keys")
-    .select("id, api_key, base_url, budget_tokens, spent_tokens, owner_user_id")
+    .select("id, api_key, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id")
     .eq("workspace_id", workspaceId)
     .eq("provider", provider)
     .order("created_at");
+  if (!keys?.length) return null;
 
-  const chosen = keys?.find((k) => k.owner_user_id === userId) ?? keys?.[0];
-  if (chosen) {
-    return {
-      apiKey: decryptSecret(chosen.api_key),
-      baseUrl: chosen.base_url,
-      keyId: chosen.id as string,
-      budgetTokens: chosen.budget_tokens === null ? null : Number(chosen.budget_tokens),
-      spentTokens: Number(chosen.spent_tokens),
-    };
-  }
+  const shared = (k: (typeof keys)[number]) => !k.assigned_user_id && !k.assigned_sub_account_id;
+  const chosen =
+    (billedSubAccountId ? keys.find((k) => k.assigned_sub_account_id === billedSubAccountId) : undefined) ??
+    keys.find((k) => k.assigned_user_id === userId) ??
+    keys.find((k) => shared(k) && k.owner_user_id === userId) ??
+    keys.find(shared);
+  if (!chosen) return null;
 
-  // No key in THIS workspace → no chat. Never fall back to a shared/platform key:
-  // every workspace uses only its own keys, so one company can never use another's.
-  return null;
+  return {
+    apiKey: decryptSecret(chosen.api_key),
+    baseUrl: chosen.base_url,
+    keyId: chosen.id as string,
+    budgetTokens: chosen.budget_tokens === null ? null : Number(chosen.budget_tokens),
+    spentTokens: Number(chosen.spent_tokens),
+  };
 }
 
 /** Stream text deltas from Anthropic, recording exact token usage as it arrives. */
@@ -374,10 +385,10 @@ export async function POST(request: Request) {
   // Always append the artifact guide so file/pptx generation works.
   const systemPrompt = (reqSystemPrompt ?? modelDef.systemPrompt ?? DEFAULT_SYSTEM) + ARTIFACT_GUIDE;
 
-  const creds = await getProviderKey(supabase, workspaceId, user.id, provider.key);
+  const creds = await getProviderKey(workspaceId, user.id, provider.key, isPersonal ? null : subAccountId);
   if (!creds) {
     return NextResponse.json(
-      { error: `No API key configured for ${provider.label}. Add one in Settings → AI Providers.` },
+      { error: `No ${provider.label} key is available for this budget. Add one in Settings → AI Providers, or ask an admin to assign one to you or this project.` },
       { status: 503 },
     );
   }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PROVIDERS, ProviderKey } from "@/lib/models";
 import { tok, usd, usdFromTokens } from "@/lib/format";
+import { createClient } from "@/lib/supabase/client";
 
 interface StoredKey {
   id: string;
@@ -12,8 +13,13 @@ interface StoredKey {
   budget_tokens?: number | null;
   spent_tokens?: number | null;
   owner_user_id?: string | null;
+  assigned_user_id?: string | null;
+  assigned_sub_account_id?: string | null;
   created_at: string;
 }
+
+interface AssignTarget { userId: string; name: string }
+interface ProjectTarget { id: string; name: string }
 
 const API_KEY_SOURCES = [
   {
@@ -81,13 +87,57 @@ export function AIProviderSettings() {
   const [editRemaining, setEditRemaining] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [members, setMembers] = useState<AssignTarget[]>([]);
+  const [projects, setProjects] = useState<ProjectTarget[]>([]);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/provider-keys")
       .then((r) => r.json())
       .then((d) => { setKeys(d.keys ?? []); setCurrentUserId(d.currentUserId ?? null); })
       .finally(() => setLoading(false));
+
+    // Delegation targets — RLS scopes these to the admin's own workspace.
+    const supabase = createClient();
+    supabase.from("workspace_members").select("user_id, display_name, role").then(({ data }) => {
+      setMembers((data ?? [])
+        .filter((m) => m.user_id)
+        .map((m) => ({ userId: m.user_id as string, name: `${m.display_name ?? "Member"}${m.role === "admin" ? " (admin)" : ""}` })));
+    });
+    supabase.from("sub_accounts").select("id, name").order("name").then(({ data }) => {
+      setProjects((data ?? []).map((a) => ({ id: a.id as string, name: a.name as string })));
+    });
   }, []);
+
+  async function assignKey(id: string, assignTo: string) {
+    setAssigningId(id);
+    const res = await fetch("/api/provider-keys", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, assignTo }),
+    });
+    const data = await res.json();
+    setAssigningId(null);
+    if (res.ok) setKeys((prev) => prev.map((k) => (k.id === id ? data.key : k)));
+  }
+
+  function assignmentValue(k: StoredKey): string {
+    if (k.assigned_sub_account_id) return `project:${k.assigned_sub_account_id}`;
+    if (k.assigned_user_id) return `user:${k.assigned_user_id}`;
+    return "shared";
+  }
+
+  function assignmentLabel(k: StoredKey): { text: string; tone: "gold" | "muted" } {
+    if (k.assigned_sub_account_id) {
+      const p = projects.find((x) => x.id === k.assigned_sub_account_id);
+      return { text: `Project · ${p?.name ?? "…"}`, tone: "gold" };
+    }
+    if (k.assigned_user_id) {
+      const m = members.find((x) => x.userId === k.assigned_user_id);
+      return { text: `Assigned · ${m?.name ?? "…"}`, tone: "gold" };
+    }
+    return { text: "Shared workspace-wide", tone: "muted" };
+  }
 
   const selectedProviderOption = PROVIDER_OPTIONS.find((p) => p.key === form.provider)!;
 
@@ -374,6 +424,39 @@ export function AIProviderSettings() {
                     )}
                   </div>
 
+                  {/* Delegation — pin this key to a person or project */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${assignmentLabel(k).tone === "gold" ? "bg-gold-soft text-gold" : "bg-surface text-subtle"}`}>
+                      <KeyGlyph className="h-3 w-3" />
+                      {assignmentLabel(k).text}
+                    </span>
+                    <label className="ml-auto flex items-center gap-1.5 text-[11px] text-subtle">
+                      Delegate to
+                      <select
+                        value={assignmentValue(k)}
+                        disabled={assigningId === k.id}
+                        onChange={(e) => assignKey(k.id, e.target.value)}
+                        className="h-7 rounded-lg border border-border-strong bg-surface px-2 text-[11px] outline-none focus:border-gold/50 disabled:opacity-50 cursor-pointer"
+                      >
+                        <option value="shared">Whole workspace (shared)</option>
+                        {members.length > 0 && (
+                          <optgroup label="A person">
+                            {members.map((m) => (
+                              <option key={m.userId} value={`user:${m.userId}`}>{m.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {projects.length > 0 && (
+                          <optgroup label="A project">
+                            {projects.map((p) => (
+                              <option key={p.id} value={`project:${p.id}`}>{p.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </label>
+                  </div>
+
                   {/* Edit budget + reconcile to actual provider balance */}
                   {editingId === k.id && (
                     <div className="mt-3 rounded-lg border border-border-strong bg-surface p-3">
@@ -466,6 +549,11 @@ export function AIProviderSettings() {
         <p className="mt-3 text-[11px] text-subtle">
           Paste your key into the form above — it's encrypted at rest and never leaves your server.
         </p>
+        <p className="mt-1.5 text-[11px] text-subtle">
+          <span className="font-medium text-muted">Delegation:</span> assign a key to a person or a
+          project so no single key serves your whole organization. Project assignment wins when a
+          project&apos;s chat runs; otherwise the caller&apos;s own assigned key, then any shared key.
+        </p>
       </div>
 
       {/* Model coverage */}
@@ -501,5 +589,14 @@ export function AIProviderSettings() {
         </div>
       </div>
     </section>
+  );
+}
+
+function KeyGlyph({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="5.5" cy="5.5" r="3" />
+      <path d="M7.6 7.6 13 13m-2-2 1.5-1.5M9.5 9.5 11 8" />
+    </svg>
   );
 }

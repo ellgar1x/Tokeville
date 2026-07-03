@@ -79,11 +79,18 @@ Billing target (`subAccountId` in the request body):
 - `"personal"` → `use_tokens_personal` RPC (draw from **unallocated treasury**, admin-only, no project).
 - Insufficient funds → **402**; the chat UI shows a prominent "Insufficient balance → Deposit funds" banner.
 
-**Per-key budgets:** each row in `provider_api_keys` can have `owner_user_id`, `budget_tokens`
-(null = no cap), `spent_tokens`. Chat prefers the **caller's own key** → any key in the same
-workspace. It enforces the key's budget (402 when used up) and records per-key spend via
-`record_key_spend`. UI: `AIProviderSettings` shows a per-key budget bar + an **Edit/Reconcile**
-form (set budget; enter "balance remaining now" to sync a key to the provider dashboard).
+**Per-key budgets + delegation:** each row in `provider_api_keys` has `owner_user_id`,
+`budget_tokens` (null = no cap), `spent_tokens`, and (2026-07-03) `assigned_user_id` /
+`assigned_sub_account_id` for **delegation** — an admin can pin a key to one person or one
+project so a single key never serves the whole workspace. Chat key resolution precedence
+(`getProviderKey` in `api/chat/route.ts`, uses the **service client** since members can't
+SELECT workspace keys under RLS): key assigned to the billed **project** → key assigned to
+the **caller** → caller's own un-delegated key → any shared (un-delegated) key. Enforces the
+key's budget (402 when used up), records per-key spend via `record_key_spend`. UI:
+`AIProviderSettings` (Settings → team admins only; institution admins are proxied to
+`/institution` and don't use keys) shows a per-key budget bar, an Edit/Reconcile form, and a
+**"Delegate to"** dropdown (Whole workspace / a person / a project). PATCH validates the target
+is in the caller's workspace. Delegating to a non-member/foreign project → 400.
 
 **Pricing is a hardcoded rate card** (`models.ts`), because providers bill deterministically
 (`tokens × published price`, same for everyone). So a correct table = exact match, universally,

@@ -20,7 +20,7 @@ export async function GET() {
   // RLS returns the caller's own keys (any user) plus every workspace key (admins).
   const { data, error } = await supabase
     .from("provider_api_keys")
-    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, created_at")
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, created_at")
     .eq("workspace_id", workspaceId)
     .order("created_at");
 
@@ -108,8 +108,9 @@ export async function DELETE(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// PATCH — edit a key's budget and/or reconcile its spend to the provider's actual
-// remaining balance. RLS restricts this to the key's owner (or a workspace admin).
+// PATCH — edit a key's budget, reconcile its spend to the provider's actual
+// remaining balance, and/or delegate it to a person or project. RLS restricts
+// this to the key's owner (or a workspace admin).
 export async function PATCH(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -118,11 +119,17 @@ export async function PATCH(request: Request) {
   const workspaceId = user.app_metadata?.workspace_id;
   if (!workspaceId) return NextResponse.json({ error: "No workspace" }, { status: 403 });
 
-  let body: { id?: string; budgetUsd?: number | null; remainingUsd?: number };
+  let body: {
+    id?: string;
+    budgetUsd?: number | null;
+    remainingUsd?: number;
+    /** Delegation: "user:<uuid>" | "project:<uuid>" | "shared" (clear). */
+    assignTo?: string;
+  };
   try { body = await request.json(); } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const { id, budgetUsd, remainingUsd } = body;
+  const { id, budgetUsd, remainingUsd, assignTo } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const { data: key, error: kErr } = await supabase
@@ -149,6 +156,39 @@ export async function PATCH(request: Request) {
     patch.spent_tokens = Math.max(0, budgetTok - Math.round(tokensFromUsd(remainingUsd)));
   }
 
+  // Delegation — pin the key to one member or one project (or back to shared).
+  // Targets are validated against the caller's workspace before writing.
+  if (assignTo !== undefined) {
+    if (assignTo === "shared") {
+      patch.assigned_user_id = null;
+      patch.assigned_sub_account_id = null;
+    } else if (assignTo.startsWith("user:")) {
+      const targetId = assignTo.slice(5);
+      const { data: member } = await supabase
+        .from("workspace_members")
+        .select("user_id")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", targetId)
+        .single();
+      if (!member) return NextResponse.json({ error: "That person isn't in your workspace." }, { status: 400 });
+      patch.assigned_user_id = targetId;
+      patch.assigned_sub_account_id = null;
+    } else if (assignTo.startsWith("project:")) {
+      const targetId = assignTo.slice(8);
+      const { data: acct } = await supabase
+        .from("sub_accounts")
+        .select("id")
+        .eq("id", targetId)
+        .eq("workspace_id", workspaceId)
+        .single();
+      if (!acct) return NextResponse.json({ error: "That project isn't in your workspace." }, { status: 400 });
+      patch.assigned_sub_account_id = targetId;
+      patch.assigned_user_id = null;
+    } else {
+      return NextResponse.json({ error: "assignTo must be 'shared', 'user:<id>', or 'project:<id>'" }, { status: 400 });
+    }
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
@@ -158,7 +198,7 @@ export async function PATCH(request: Request) {
     .update(patch)
     .eq("id", id)
     .eq("workspace_id", workspaceId)
-    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, created_at")
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, created_at")
     .single();
 
   if (error) {
