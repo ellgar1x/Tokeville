@@ -2,6 +2,48 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isValidUsername, normalizeUsername, usernameToEmail } from "@/lib/members";
+import { nextTier, tierById, type InstitutionalTierId } from "@/lib/plans";
+
+/**
+ * Institutional per-seat enforcement: adding a NEW member is blocked once the
+ * workspace's active users (members with >= 1 spend event this billing month)
+ * have reached the tier's seat limit. Existing users are never blocked from
+ * using the platform — only new additions are gated. Team workspaces and
+ * tiers without a limit (enterprise / legacy subs) are unaffected.
+ */
+async function seatLimitError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+): Promise<string | null> {
+  const { data: ws } = await supabase
+    .from("workspaces")
+    .select("type, institutional_tier, institutional_seat_limit")
+    .eq("id", workspaceId)
+    .single();
+  if (!ws || ws.type !== "institution" || ws.institutional_seat_limit == null) return null;
+
+  // Live count (not the cached column) so month boundaries are always correct.
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const { data: spenders } = await supabase
+    .from("activity")
+    .select("user_id")
+    .eq("workspace_id", workspaceId)
+    .eq("type", "spend")
+    .gte("created_at", monthStart.toISOString());
+  const activeCount = new Set((spenders ?? []).map((r) => r.user_id as string)).size;
+
+  const limit = Number(ws.institutional_seat_limit);
+  if (activeCount < limit) return null;
+
+  const tier = tierById(ws.institutional_tier);
+  const up = tier ? nextTier(tier.id as InstitutionalTierId) : null;
+  const tierName = tier?.label ?? "current";
+  return up
+    ? `You've reached your ${tierName} plan limit of ${limit} active users. Upgrade to ${up.label} to add more.`
+    : `You've reached your ${tierName} plan limit of ${limit} active users. Contact us to raise it.`;
+}
 
 /** Authenticate the caller and confirm they are an admin of a workspace. */
 async function requireAdmin() {
@@ -22,6 +64,16 @@ export async function POST(request: Request) {
   if ("error" in auth) {
     console.error("[members] create denied", { error: auth.error });
     return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  // Institutional workspaces: block NEW members past the tier's seat limit.
+  {
+    const supabase = await createClient();
+    const limitMsg = await seatLimitError(supabase, auth.workspaceId);
+    if (limitMsg) {
+      console.error("[members] seat limit reached", { workspaceId: auth.workspaceId });
+      return NextResponse.json({ error: limitMsg, seatLimitReached: true }, { status: 402 });
+    }
   }
 
   let body: {

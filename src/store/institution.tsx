@@ -44,6 +44,9 @@ interface State {
   secondaryColor: string | null;
   subscriptionStatus: InstitutionData["subscriptionStatus"];
   subscriptionCurrentPeriodEnd: string | null;
+  institutionalTier: string | null;
+  institutionalSeatLimit: number | null;
+  activeUserCount: number;
   toasts: Toast[];
 }
 
@@ -66,6 +69,9 @@ function reducer(state: State, action: Action): State {
         alerts: action.data.alerts,
         subscriptionStatus: action.data.subscriptionStatus,
         subscriptionCurrentPeriodEnd: action.data.subscriptionCurrentPeriodEnd,
+        institutionalTier: action.data.institutionalTier,
+        institutionalSeatLimit: action.data.institutionalSeatLimit,
+        activeUserCount: action.data.activeUserCount,
       };
     case "TOAST":
       return { ...state, toasts: [action.toast, ...state.toasts] };
@@ -93,7 +99,8 @@ interface InstitutionContext {
   recordSpend: (input: SpendInput) => Promise<boolean>;
   importSpend: (rows: SpendInput[]) => Promise<{ ok: number; failed: number }>;
   markAlertsRead: () => Promise<void>;
-  subscribe: () => Promise<void>;
+  subscribe: (tier?: string) => Promise<void>;
+  changeTier: (tier: string) => Promise<void>;
   setWorkspaceType: (type: "team" | "institution") => Promise<void>;
   signOut: () => Promise<void>;
   dismissToast: (id: string) => void;
@@ -121,6 +128,9 @@ export function InstitutionProvider({
     secondaryColor: initial.secondaryColor,
     subscriptionStatus: initial.subscriptionStatus,
     subscriptionCurrentPeriodEnd: initial.subscriptionCurrentPeriodEnd,
+    institutionalTier: initial.institutionalTier,
+    institutionalSeatLimit: initial.institutionalSeatLimit,
+    activeUserCount: initial.activeUserCount,
     toasts: [],
   });
 
@@ -238,14 +248,47 @@ export function InstitutionProvider({
         refetch();
       },
 
-      subscribe: async () => {
+      subscribe: async (tier = "starter") => {
         try {
-          const res = await fetch("/api/stripe/subscribe", { method: "POST" });
+          const res = await fetch("/api/stripe/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tier }),
+          });
           const data = await res.json();
           if (!res.ok || !data.url) throw new Error(data.error ?? "Could not start subscription");
           window.location.href = data.url;
         } catch (e) {
           toast({ title: "Couldn't start checkout", detail: e instanceof Error ? e.message : "Try again", tone: "danger" });
+        }
+      },
+
+      changeTier: async (tier) => {
+        try {
+          const res = await fetch("/api/stripe/upgrade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tier }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            // No live subscription → run the normal checkout for the chosen tier.
+            if (data.needsCheckout) {
+              const sub = await fetch("/api/stripe/subscribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tier }),
+              });
+              const subData = await sub.json();
+              if (sub.ok && subData.url) { window.location.href = subData.url; return; }
+              throw new Error(subData.error ?? "Could not start checkout");
+            }
+            throw new Error(data.error ?? "Could not change plan");
+          }
+          await refetch();
+          toast({ title: "Plan updated", detail: `You're now on the ${tier[0].toUpperCase()}${tier.slice(1)} plan.`, tone: "positive" });
+        } catch (e) {
+          toast({ title: "Couldn't change plan", detail: e instanceof Error ? e.message : "Try again", tone: "danger" });
         }
       },
 

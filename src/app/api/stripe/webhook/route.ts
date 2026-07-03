@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase/service";
+import { tierById } from "@/lib/plans";
 
 export async function POST(request: Request) {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -43,6 +44,9 @@ export async function POST(request: Request) {
     // Approximate the first renewal date one month out (good enough for demo/test).
     const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
+    // Per-seat tier purchased (set by /api/stripe/subscribe); legacy sessions have none.
+    const tier = tierById(session.metadata?.tier);
+
     const supabase = createServiceClient();
     const { error } = await supabase
       .from("workspaces")
@@ -51,6 +55,7 @@ export async function POST(request: Request) {
         subscription_current_period_end: periodEnd,
         stripe_customer_id: typeof session.customer === "string" ? session.customer : null,
         stripe_subscription_id: typeof session.subscription === "string" ? session.subscription : null,
+        ...(tier ? { institutional_tier: tier.id, institutional_seat_limit: tier.seatLimit } : {}),
       })
       .eq("id", workspaceId);
 

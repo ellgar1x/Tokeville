@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useInstitution, type SpendInput } from "@/store/institution";
 import { usd } from "@/lib/format";
 import type { Department, SpendEntry } from "@/lib/data";
+import { INSTITUTIONAL_TIERS, tierById, type InstitutionalTierId } from "@/lib/plans";
 
 type Tab = "overview" | "departments" | "spend" | "import" | "account";
 
@@ -30,11 +31,14 @@ export default function InstitutionPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">AI Spend Console</h1>
-        <p className="mt-1 text-sm text-subtle">
-          Track AI spend across every tool by department — logged manually or imported, in USD.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">AI Spend Console</h1>
+          <p className="mt-1 text-sm text-subtle">
+            Track AI spend across every tool by department — logged manually or imported, in USD.
+          </p>
+        </div>
+        <PlanBadge />
       </div>
 
       <nav className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-2 p-1">
@@ -62,11 +66,25 @@ export default function InstitutionPage() {
   );
 }
 
-const SUBSCRIPTION_PRICE = "$99";
+/** Header chip: "Institutional · Team plan · 11/25 active users". */
+function PlanBadge() {
+  const { state } = useInstitution();
+  const tier = tierById(state.institutionalTier);
+  const seats = state.institutionalSeatLimit != null
+    ? `${state.activeUserCount}/${state.institutionalSeatLimit} active users`
+    : `${state.activeUserCount} active user${state.activeUserCount === 1 ? "" : "s"}`;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/30 bg-gold-soft px-3 py-1.5 text-xs font-medium text-gold">
+      Institutional · {tier ? `${tier.label} plan` : "Legacy plan"} ·{" "}
+      <span className="tnum font-mono">{seats}</span>
+    </span>
+  );
+}
 
 function Paywall() {
   const { state, subscribe, setWorkspaceType } = useInstitution();
   const [loading, setLoading] = useState(false);
+  const [chosen, setChosen] = useState<InstitutionalTierId>("starter");
   const canceled = state.subscriptionStatus === "canceled";
 
   const perks = [
@@ -75,24 +93,53 @@ function Paywall() {
     "Manual spend logging + CSV import",
     "Automatic alerts when a department hits 80% of budget",
   ];
+  const picked = tierById(chosen);
 
   return (
-    <div className="mx-auto max-w-lg py-6">
+    <div className="mx-auto max-w-xl py-6">
       <div className="rounded-2xl border border-gold/25 bg-surface p-8 text-center shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
         <span className="inline-flex items-center rounded-full border border-gold/30 bg-gold-soft px-2.5 py-1 text-[11px] font-medium text-gold">
           Institutional plan
         </span>
         <h1 className="mt-4 text-2xl font-bold tracking-tight">
-          {canceled ? "Your subscription has ended" : "Activate your subscription"}
+          {canceled ? "Your subscription has ended" : "Pick your plan"}
         </h1>
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted">
           Tokeville Institutional is for organizations with their own or contracted AI. Budget and
-          track that spend by department — billed as a simple monthly subscription.
+          track that spend by department — billing scales with your active users.
         </p>
 
-        <div className="mt-6 flex items-baseline justify-center gap-1">
-          <span className="tnum font-mono text-4xl font-bold text-gold">{SUBSCRIPTION_PRICE}</span>
-          <span className="text-sm text-subtle">/ month</span>
+        {/* Tier picker */}
+        <div className="mt-6 grid gap-2 text-left">
+          {INSTITUTIONAL_TIERS.map((t) =>
+            t.priceUsd != null ? (
+              <button
+                key={t.id}
+                onClick={() => setChosen(t.id)}
+                className={`flex items-center justify-between rounded-xl border px-4 py-3 transition-colors cursor-pointer ${
+                  chosen === t.id ? "border-gold/60 bg-gold-soft" : "border-border bg-surface-2 hover:border-gold/30"
+                }`}
+              >
+                <span>
+                  <span className="text-sm font-semibold">{t.label}</span>
+                  <span className="ml-2 text-xs text-subtle">{t.blurb}</span>
+                </span>
+                <span className="tnum font-mono text-sm font-bold text-gold">${t.priceUsd}<span className="text-xs font-normal text-subtle">/mo</span></span>
+              </button>
+            ) : (
+              <a
+                key={t.id}
+                href={`mailto:sales@tokeville.app?subject=Tokeville%20Institutional%20Enterprise`}
+                className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-3 transition-colors hover:border-gold/30 cursor-pointer"
+              >
+                <span>
+                  <span className="text-sm font-semibold">{t.label}</span>
+                  <span className="ml-2 text-xs text-subtle">{t.blurb}</span>
+                </span>
+                <span className="text-xs font-medium text-gold">Contact us →</span>
+              </a>
+            ),
+          )}
         </div>
 
         <ul className="mx-auto mt-6 max-w-sm space-y-2 text-left">
@@ -105,11 +152,11 @@ function Paywall() {
         </ul>
 
         <button
-          onClick={() => { setLoading(true); subscribe(); }}
+          onClick={() => { setLoading(true); subscribe(chosen); }}
           disabled={loading}
           className="mt-7 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gold-bright to-gold text-sm font-bold text-[#0a0a0b] shadow-[0_1px_12px_rgba(232,184,95,0.3)] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer"
         >
-          {loading ? "Redirecting to Stripe…" : `Subscribe · ${SUBSCRIPTION_PRICE}/mo`}
+          {loading ? "Redirecting to Stripe…" : `Subscribe · ${picked?.label} · $${picked?.priceUsd}/mo`}
         </button>
         <p className="mt-2.5 text-[11px] text-subtle">
           Secured by Stripe · test mode · card <span className="tnum font-mono">4242 4242 4242 4242</span>
@@ -612,27 +659,92 @@ function ImportCsv() {
 }
 
 function Account() {
-  const { state, setWorkspaceType, signOut } = useInstitution();
+  const { state, setWorkspaceType, signOut, changeTier } = useInstitution();
   const [confirming, setConfirming] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
   const renews = state.subscriptionCurrentPeriodEnd
     ? new Date(state.subscriptionCurrentPeriodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : null;
 
+  const tier = tierById(state.institutionalTier);
+  const limit = state.institutionalSeatLimit;
+  const used = state.activeUserCount;
+  const pctUsed = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+
   return (
     <div className="space-y-6">
-      {/* Subscription */}
+      {/* Plan & seats */}
       <section className="rounded-2xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
-        <h2 className="text-sm font-semibold tracking-tight">Subscription</h2>
+        <h2 className="text-sm font-semibold tracking-tight">Plan &amp; seats</h2>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-positive-soft px-2.5 py-1 text-[11px] font-semibold text-positive">
               <span className="h-1.5 w-1.5 rounded-full bg-positive" />
-              Active · Tokeville Institutional
+              Active · {tier ? `${tier.label} plan` : "Tokeville Institutional (legacy)"}
             </span>
             <p className="mt-1.5 text-xs text-subtle">
-              {SUBSCRIPTION_PRICE}/month{renews ? ` · renews ${renews}` : ""}
+              {tier?.priceUsd != null ? `$${tier.priceUsd}/month` : tier?.id === "enterprise" ? "Custom pricing" : "$99/month (legacy flat plan)"}
+              {renews ? ` · renews ${renews}` : ""}
             </p>
           </div>
+          <div className="text-right">
+            <p className="tnum font-mono text-sm font-bold">
+              {used}{limit != null ? ` / ${limit}` : ""} <span className="text-xs font-normal text-subtle">active users</span>
+            </p>
+            <p className="text-[11px] text-subtle">spent tokens this billing month</p>
+          </div>
+        </div>
+        {limit != null && (
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className={`h-full rounded-full ${pctUsed >= 100 ? "bg-danger" : pctUsed >= 80 ? "bg-gold" : "bg-positive"}`}
+              style={{ width: `${pctUsed}%` }}
+            />
+          </div>
+        )}
+
+        {/* Upgrade / change plan */}
+        <div className="mt-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-subtle">Change plan</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {INSTITUTIONAL_TIERS.map((t) =>
+              t.priceUsd != null ? (
+                <button
+                  key={t.id}
+                  disabled={switching !== null || t.id === tier?.id}
+                  onClick={async () => { setSwitching(t.id); await changeTier(t.id); setSwitching(null); }}
+                  className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
+                    t.id === tier?.id
+                      ? "border-gold/60 bg-gold-soft opacity-80"
+                      : "border-border bg-surface-2 hover:border-gold/40 cursor-pointer"
+                  } disabled:cursor-default`}
+                >
+                  <span>
+                    <span className="text-sm font-semibold">{t.label}{t.id === tier?.id ? " · current" : ""}</span>
+                    <span className="block text-[11px] text-subtle">{t.blurb}</span>
+                  </span>
+                  <span className="tnum font-mono text-sm font-bold text-gold">
+                    {switching === t.id ? "…" : <>${t.priceUsd}<span className="text-[11px] font-normal text-subtle">/mo</span></>}
+                  </span>
+                </button>
+              ) : (
+                <a
+                  key={t.id}
+                  href="mailto:sales@tokeville.app?subject=Tokeville%20Institutional%20Enterprise"
+                  className="flex items-center justify-between rounded-xl border border-dashed border-border px-3.5 py-2.5 transition-colors hover:border-gold/40 cursor-pointer"
+                >
+                  <span>
+                    <span className="text-sm font-semibold">{t.label}</span>
+                    <span className="block text-[11px] text-subtle">{t.blurb}</span>
+                  </span>
+                  <span className="text-xs font-medium text-gold">Contact us →</span>
+                </a>
+              ),
+            )}
+          </div>
+          <p className="mt-2 text-[11px] text-subtle">
+            Billing scales with active users — members who metered spend this month — not departments. Changes prorate via Stripe.
+          </p>
         </div>
       </section>
 

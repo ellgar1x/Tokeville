@@ -108,6 +108,12 @@ export interface InstitutionData {
   secondaryColor: string | null;
   subscriptionStatus: "inactive" | "active" | "canceled";
   subscriptionCurrentPeriodEnd: string | null;
+  /** Per-seat plan id ('starter' | 'team' | 'scale' | 'enterprise'); null = legacy flat sub or none. */
+  institutionalTier: string | null;
+  /** Max active users on the current tier; null = no fixed cap. */
+  institutionalSeatLimit: number | null;
+  /** Members with >= 1 token spend event this billing month (trigger-cached). */
+  activeUserCount: number;
   profile: Profile;
   departments: Department[];
   spend: SpendEntry[];

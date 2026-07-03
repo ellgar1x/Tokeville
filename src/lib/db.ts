@@ -270,7 +270,7 @@ export async function loadInstitution(
   email: string,
 ): Promise<InstitutionData> {
   const [wsRes, profileRes, deptRes, spendRes, alertRes] = await Promise.all([
-    supabase.from("workspaces").select("id, name, primary_color, secondary_color, subscription_status, subscription_current_period_end").single(),
+    supabase.from("workspaces").select("id, name, primary_color, secondary_color, subscription_status, subscription_current_period_end, institutional_tier, institutional_seat_limit, active_user_count").single(),
     supabase.from("profiles").select("*").single(),
     supabase.from("departments").select("*").order("name"),
     supabase.from("spend_entries").select("*").order("spent_on", { ascending: false }),
@@ -316,6 +316,9 @@ export async function loadInstitution(
     secondaryColor: wsRes.data?.secondary_color ?? null,
     subscriptionStatus: (wsRes.data?.subscription_status as InstitutionData["subscriptionStatus"]) ?? "inactive",
     subscriptionCurrentPeriodEnd: (wsRes.data?.subscription_current_period_end as string | null) ?? null,
+    institutionalTier: (wsRes.data?.institutional_tier as string | null) ?? null,
+    institutionalSeatLimit: wsRes.data?.institutional_seat_limit != null ? Number(wsRes.data.institutional_seat_limit) : null,
+    activeUserCount: Number(wsRes.data?.active_user_count ?? 0),
     profile: {
       displayName: profileRes.data?.display_name ?? "",
       orgName: profileRes.data?.org_name ?? "",

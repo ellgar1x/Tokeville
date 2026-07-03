@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TokevilleMark } from "@/components/icons";
 import { ScrollReveal } from "@/components/ScrollReveal";
+import { INSTITUTIONAL_TIERS } from "@/lib/plans";
 
 export const metadata = {
   title: "Tokeville — AI spend, under control",
@@ -240,10 +241,28 @@ export default function LandingPage() {
               fixed-cost models, not constant API spend. Budget and track that spend by department, all in one console.
             </p>
             <div className="mt-5 flex items-baseline gap-1.5">
-              <span className="tnum gold-text font-mono text-3xl font-bold">$99</span>
+              <span className="tnum gold-text font-mono text-3xl font-bold">From $49</span>
               <span className="text-sm text-subtle">/ month</span>
             </div>
-            <p className="mt-1 text-xs text-subtle">Flat subscription — unlimited departments & spend logging.</p>
+            <p className="mt-1 text-xs text-subtle">Per-seat plans — billing scales with your active users, not departments.</p>
+
+            {/* Per-seat tiers */}
+            <div className="mt-4 divide-y divide-border/60 rounded-xl border border-border bg-background/40">
+              {INSTITUTIONAL_TIERS.map((t) => (
+                <div key={t.id} className="flex items-center justify-between px-3.5 py-2">
+                  <span className="text-sm">
+                    <span className="font-semibold">{t.label}</span>
+                    <span className="ml-2 text-xs text-subtle">
+                      {t.seatLimit != null ? `up to ${t.seatLimit} active users` : "100+ users, contact us"}
+                    </span>
+                  </span>
+                  <span className="tnum font-mono text-sm font-semibold text-gold">
+                    {t.priceUsd != null ? <>${t.priceUsd}<span className="text-[11px] font-normal text-subtle">/mo</span></> : "Custom"}
+                  </span>
+                </div>
+              ))}
+            </div>
+
             <ul className="mt-5 space-y-2 text-sm">
               {[
                 "Consolidated USD dashboard across all AI tools",

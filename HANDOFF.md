@@ -19,8 +19,18 @@ those budgets — across providers (Anthropic, OpenAI, Google), through one chat
 - **Team** (default): pay ALL your AI spend through Tokeville — deposit/buy tokens, budget
   them, meter every call. Tokeville earns via a **5% platform fee** on deposits.
 - **Institutional**: for orgs with their own/contracted (fixed-cost) AI. Budget & track that
-  spend **by department** in USD; log manually or via CSV; 80% budget alerts. Monetized by a
-  **$99/mo Stripe subscription** — the institution dashboard is paywall-gated until active.
+  spend **by department** in USD; log manually or via CSV; 80% budget alerts. Monetized by
+  **per-seat Stripe subscriptions** (`src/lib/plans.ts` is the source of truth): Starter
+  $49/mo (5 active users), Team $199/mo (25), Scale $499/mo (100), Enterprise custom (100+,
+  sales-led). "Active user" = a member with >= 1 token spend event in the current calendar
+  month (`count_active_users` SQL fn; trigger caches into `workspaces.active_user_count`).
+  Columns: `workspaces.institutional_tier` / `institutional_seat_limit` (null = legacy flat
+  $99 sub). Adding a NEW member past the seat limit → 402 with an upgrade prompt (existing
+  users are never blocked). Stripe prices resolve by lookup_key (`tokeville_inst_*`, created
+  in test mode); `/api/stripe/upgrade` swaps the live subscription item with prorations.
+  The dashboard is paywall-gated (tier picker) until a subscription is active; Account tab
+  shows plan + seat usage + change-plan grid; header shows
+  "Institutional · <Tier> plan · N/M active users". Team workspaces are untouched.
 
 ### Roles
 - **Admin** — full workspace (treasury, spend, sub-accounts, team, chat, settings).

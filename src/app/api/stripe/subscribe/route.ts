@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase/server";
-
-/** Monthly price (USD cents) of the Tokeville Institutional subscription. */
-const SUBSCRIPTION_PRICE_CENTS = 9900; // $99.00 / month
+import { resolveTierPrice, selfServeTier } from "@/lib/stripeTiers";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -31,29 +29,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Stripe is not configured on this server." }, { status: 503 });
   }
 
+  // Which per-seat tier is being purchased (defaults to starter).
+  let tierId = "starter";
+  try {
+    const body = await request.json();
+    if (typeof body?.tier === "string") tierId = body.tier;
+  } catch { /* empty body = starter */ }
+  const parsed = selfServeTier(tierId);
+  if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const { tier } = parsed;
+
   const origin = request.headers.get("origin") ?? "http://localhost:3000";
   const stripe = new Stripe(stripeKey);
 
   try {
+    const priceId = await resolveTierPrice(stripe, tier);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: SUBSCRIPTION_PRICE_CENTS,
-            recurring: { interval: "month" },
-            product_data: {
-              name: "Tokeville Institutional",
-              description: "Budget & track your organization's AI spend by department.",
-            },
-          },
-        },
-      ],
+      line_items: [{ quantity: 1, price: priceId }],
       customer_email: user.email ?? undefined,
-      metadata: { workspace_id: workspaceId, kind: "institution_subscription" },
-      subscription_data: { metadata: { workspace_id: workspaceId } },
+      metadata: { workspace_id: workspaceId, kind: "institution_subscription", tier: tier.id },
+      subscription_data: { metadata: { workspace_id: workspaceId, tier: tier.id } },
       success_url: `${origin}/institution?subscription=success`,
       cancel_url: `${origin}/institution?subscription=cancelled`,
     });
