@@ -55,9 +55,9 @@ QUALITY BAR — the file is the deliverable, so make it genuinely excellent, the
 - Use inline emphasis where it helps: **bold** for key terms and *italic* for emphasis (supported in document paragraphs, list items, and table cells).
 
 Block types:
-- Word document (.docx) — reports, letters, memos, essays, plans, specs. Tag \`\`\`document with ONLY a JSON object:
+- Document (.docx / .pdf) — reports, letters, memos, essays, plans, specs. Tag \`\`\`document with ONLY a JSON object:
   {"title":"Document Title","subtitle":"optional one-line summary","body":[{"h1":"Section heading"},{"h2":"Subheading"},{"p":"A full paragraph of real prose."},{"ul":["item","item"]},{"ol":["step","step"]},{"quote":"a callout or notable quote"},{"table":{"headers":["Col A","Col B"],"rows":[["a1","b1"],["a2","b2"]]}}]}
-  Items render in order. Use headings to organize, paragraphs for the substance, tables for structured comparisons.
+  Items render in order. Use headings to organize, paragraphs for the substance, tables for structured comparisons. The reader can download it as either Word or PDF — use this same block even when the user asks specifically for a PDF.
 - Spreadsheet (.xlsx) — tables, data, budgets, trackers, comparisons. Tag \`\`\`sheet with ONLY JSON:
   {"name":"Sheet1","columns":["Column A","Column B"],"rows":[["a1","b1"],["a2","b2"]]}. Put real, complete data in the rows (numbers as numbers, not strings). Add a totals row where it makes sense.
 - CSV (.csv) — only if the user specifically asks for CSV: a \`\`\`csv block with raw comma-separated rows (header row first).

@@ -256,7 +256,7 @@ function inlineRuns(text: string): Array<{ text: string; bold?: boolean; italics
 }
 
 function DocumentCard({ raw }: { raw: string }) {
-  const [building, setBuilding] = useState(false);
+  const [busy, setBusy] = useState<null | "docx" | "pdf">(null);
   const [err, setErr] = useState<string | null>(null);
 
   let doc: DocSpec | null = null;
@@ -265,10 +265,25 @@ function DocumentCard({ raw }: { raw: string }) {
     doc = parsed && Array.isArray(parsed.body) ? parsed : null;
   } catch { doc = null; }
 
-  async function build() {
+  async function buildPdf() {
     if (!doc) return;
     setErr(null);
-    setBuilding(true);
+    setBusy("pdf");
+    try {
+      const { buildDocumentPdf } = await import("@/lib/buildPdf");
+      const bytes = await buildDocumentPdf(doc);
+      saveBlob(bytes as BlobPart, "application/pdf", `${slug(doc.title, "document")}.pdf`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not build the PDF");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function buildDocx() {
+    if (!doc) return;
+    setErr(null);
+    setBusy("docx");
     try {
       const docx = await import("docx");
       const {
@@ -385,7 +400,7 @@ function DocumentCard({ raw }: { raw: string }) {
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not build the document");
     } finally {
-      setBuilding(false);
+      setBusy(null);
     }
   }
 
@@ -398,11 +413,16 @@ function DocumentCard({ raw }: { raw: string }) {
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold/15 text-gold"><DocIcon /></span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{doc.title || "Document ready"}</p>
-          <p className="text-xs text-subtle">Word document (.docx)</p>
+          <p className="text-xs text-subtle">Document · Word or PDF</p>
         </div>
-        <button onClick={build} disabled={building} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3 text-xs font-semibold text-[#0a0a0b] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer">
-          <DownloadIcon /> {building ? "Building…" : "Download .docx"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button onClick={buildPdf} disabled={busy !== null} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-strong bg-background/60 px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-gold/40 disabled:opacity-50 cursor-pointer">
+            {busy === "pdf" ? "…" : ".pdf"}
+          </button>
+          <button onClick={buildDocx} disabled={busy !== null} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3 text-xs font-semibold text-[#0a0a0b] transition-all duration-200 hover:from-gold hover:to-gold-deep disabled:opacity-50 cursor-pointer">
+            <DownloadIcon /> {busy === "docx" ? "Building…" : "Download .docx"}
+          </button>
+        </div>
       </div>
       {headings.length > 0 && (
         <ol className="mt-3 space-y-1.5">
@@ -564,7 +584,7 @@ function PreBlock({ children }: { children?: ReactNode }) {
 
   // Rich file types get dedicated "file ready" download cards.
   if (lang === "slides") return <SlidesCard raw={raw} />;
-  if (lang === "document" || lang === "docx") return <DocumentCard raw={raw} />;
+  if (lang === "document" || lang === "docx" || lang === "pdf") return <DocumentCard raw={raw} />;
   if (lang === "sheet" || lang === "xlsx") return <SheetCard raw={raw} isCsv={false} />;
   if (lang === "csv") return <SheetCard raw={raw} isCsv={true} />;
 
