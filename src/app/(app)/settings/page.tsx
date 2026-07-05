@@ -210,9 +210,10 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-border bg-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.3)] sm:p-7">
         <h2 className="text-sm font-semibold tracking-tight">Account type</h2>
         <p className="mt-0.5 text-xs text-subtle">
-          This is a <span className="font-medium text-gold">Team</span> workspace — you pay all your AI spend through
-          Tokeville with token budgets and live metering (Tokeville earns via the per-transaction platform fee). Convert
-          to an Institutional workspace to instead budget your own/contracted AI by department, billed by subscription.
+          This is a <span className="font-medium text-gold">Managed</span> workspace — you pay all your AI through
+          Tokeville: deposit funds and your tokens run on Tokeville&apos;s own keys, budgeted and metered per call
+          (Tokeville earns via the per-transaction platform fee). Convert to an Institutional workspace to instead
+          budget your own/contracted AI by department, billed by subscription.
         </p>
         {confirmConvert ? (
           <div className="mt-4 rounded-xl border border-gold/20 bg-gold-soft p-4">

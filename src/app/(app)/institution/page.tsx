@@ -166,7 +166,7 @@ function Paywall() {
           onClick={() => setWorkspaceType("team")}
           className="mt-5 text-xs font-medium text-subtle transition-colors hover:text-gold cursor-pointer"
         >
-          Not contracted AI? Switch to the Team plan instead →
+          Not contracted AI? Switch to the Managed plan instead →
         </button>
       </div>
     </div>
@@ -753,8 +753,9 @@ function Account() {
         <h2 className="text-sm font-semibold tracking-tight">Account type</h2>
         <p className="mt-1 text-sm text-muted">
           This is an <span className="font-medium text-gold">Institutional</span> workspace — you budget your own or
-          contracted AI, billed by subscription. Switch to a <span className="font-medium">Team</span> workspace to
-          instead pay all your AI spend through Tokeville with token budgets and live metering.
+          contracted AI, billed by subscription. Switch to a <span className="font-medium">Managed</span> workspace to
+          instead pay all your AI through Tokeville — deposit funds that run on Tokeville&apos;s own keys, budgeted and
+          metered per call.
         </p>
         {confirming ? (
           <div className="mt-4 flex items-center gap-2">
@@ -762,7 +763,7 @@ function Account() {
               onClick={() => setWorkspaceType("team")}
               className="inline-flex h-9 items-center rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-xs font-semibold text-[#0a0a0b] cursor-pointer"
             >
-              Confirm switch to Team
+              Confirm switch to Managed
             </button>
             <button onClick={() => setConfirming(false)} className="inline-flex h-9 items-center rounded-lg border border-border px-4 text-xs text-muted hover:bg-surface-2 cursor-pointer">
               Cancel
@@ -773,7 +774,7 @@ function Account() {
             onClick={() => setConfirming(true)}
             className="mt-4 inline-flex h-9 items-center rounded-lg border border-border-strong bg-surface-2 px-4 text-xs font-medium text-muted transition-colors hover:border-gold/40 hover:text-gold cursor-pointer"
           >
-            Switch to Team workspace
+            Switch to Managed workspace
           </button>
         )}
       </section>

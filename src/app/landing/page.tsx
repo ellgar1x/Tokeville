@@ -195,18 +195,19 @@ export default function LandingPage() {
         </div>
 
         <div className="mt-12 grid gap-5 md:grid-cols-2">
-          {/* Team */}
+          {/* Managed */}
           <div className="reveal-on-scroll gold-border relative flex flex-col rounded-3xl border border-border bg-surface/70 p-7 backdrop-blur">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold tracking-tight">Team</h3>
+              <h3 className="text-lg font-semibold tracking-tight">Managed</h3>
               <span className="rounded-full border border-gold/30 bg-gold-soft px-2.5 py-1 text-[11px] font-medium text-gold">
                 Most popular
               </span>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              For teams with constant API bills. Tokeville becomes the single platform you pay
-              <strong className="text-foreground"> all</strong> your AI through — deposit funds, budget them across
-              teams, and meter every model call in real time.
+              For teams with constant API bills. Pay
+              <strong className="text-foreground"> all</strong> your AI through Tokeville — deposit funds and your
+              tokens run on Tokeville&apos;s own keys, so there&apos;s nothing to set up. Budget across teams and
+              meter every model call in real time.
             </p>
             <div className="mt-5 flex items-baseline gap-1.5">
               <span className="tnum gold-text font-mono text-3xl font-bold">Pay-as-you-go</span>
@@ -229,7 +230,7 @@ export default function LandingPage() {
               href="/login"
               className="mt-7 inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-b from-gold-bright to-gold text-sm font-bold text-[#0a0a0b] shadow-[0_1px_12px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
             >
-              Start a Team workspace
+              Start a Managed workspace
             </Link>
           </div>
 

@@ -299,7 +299,7 @@ function LoginInner() {
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { key: "team", title: "Team", desc: "Pay all your AI spend through Tokeville — deposit, budget, and meter every call" },
+                      { key: "team", title: "Managed", desc: "Pay all your AI through Tokeville — deposit funds, and your tokens run on Tokeville's own keys. Metered per call" },
                       { key: "institution", title: "Institutional", desc: "Budget your own/contracted AI by department. Subscription-based" },
                     ] as const).map((opt) => (
                       <button
