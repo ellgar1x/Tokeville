@@ -26,6 +26,7 @@ const PROVIDER_OPTIONS: { key: string; label: string; color: string; placeholder
   { key: "anthropic", label: "Anthropic", color: "#cc785c", placeholder: "sk-ant-…" },
   { key: "openai", label: "OpenAI", color: "#10a37f", placeholder: "sk-…" },
   { key: "google", label: "Google AI", color: "#4285f4", placeholder: "AIza…" },
+  { key: "mistral", label: "Mistral", color: "#f97316", placeholder: "…" },
   { key: "custom", label: "Custom / OpenAI-compatible", color: "#888", placeholder: "sk-… or any key", needsUrl: true },
 ];
 
@@ -33,6 +34,7 @@ const API_KEY_SOURCES = [
   { key: "anthropic", label: "Anthropic", color: "#cc785c", url: "https://console.anthropic.com/settings/keys" },
   { key: "openai", label: "OpenAI", color: "#10a37f", url: "https://platform.openai.com/api-keys" },
   { key: "google", label: "Google AI Studio", color: "#4285f4", url: "https://aistudio.google.com/app/apikey" },
+  { key: "mistral", label: "Mistral", color: "#f97316", url: "https://console.mistral.ai/api-keys/" },
 ];
 
 export function InstitutionKeys({ departments }: { departments: { id: string; name: string }[] }) {

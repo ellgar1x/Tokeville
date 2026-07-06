@@ -265,8 +265,10 @@ function runStream(
   attachments: Attachment[],
 ): AsyncGenerator<string> {
   if (provider.key === "anthropic") return streamAnthropic(creds.apiKey, apiModel, messages, systemPrompt, usage, attachments);
-  if (provider.key === "openai" || provider.key === "custom")
-    return streamOpenAI(creds.apiKey, creds.baseUrl, apiModel, messages, systemPrompt, usage, attachments);
+  // OpenAI, Mistral, and any custom endpoint speak the OpenAI wire format. Mistral
+  // has a fixed base URL from the registry when the caller didn't supply one.
+  if (provider.key === "openai" || provider.key === "custom" || provider.key === "mistral")
+    return streamOpenAI(creds.apiKey, creds.baseUrl ?? provider.baseUrl, apiModel, messages, systemPrompt, usage, attachments);
   return streamGoogle(creds.apiKey, apiModel, messages, systemPrompt, usage, attachments);
 }
 

@@ -204,10 +204,9 @@ export default function LandingPage() {
               </span>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              For teams with constant API bills. Pay
-              <strong className="text-foreground"> all</strong> your AI through Tokeville — deposit funds and your
-              tokens run on Tokeville&apos;s own keys, so there&apos;s nothing to set up. Budget across teams and
-              meter every model call in real time.
+              For teams with constant API bills. <strong className="text-foreground">Buy tokens from Tokeville</strong> and
+              spend them across every model — all running on <strong className="text-foreground">Tokeville&apos;s own keys</strong>.
+              No provider accounts, no API keys, nothing to set up. Budget across teams and meter every call in real time.
             </p>
             <div className="mt-5 flex items-baseline gap-1.5">
               <span className="tnum gold-text font-mono text-3xl font-bold">Pay-as-you-go</span>
@@ -215,10 +214,10 @@ export default function LandingPage() {
             <p className="mt-1 text-xs text-subtle">A small platform fee per transaction — no subscription.</p>
             <ul className="mt-5 space-y-2 text-sm">
               {[
-                "Deposit / buy tokens, spend across every provider",
+                "Buy tokens; they run on Tokeville's keys — nothing to configure",
+                "One chat for Claude, GPT, Gemini & Mistral",
                 "Per-team & per-project budgets with live metering",
                 "Automatic top-ups and low-balance alerts",
-                "One chat interface for Claude, GPT, Gemini & more",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-2.5 text-muted">
                   <CheckGlyph className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
@@ -234,12 +233,13 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* Institutional */}
+          {/* Institutional — bring your own keys */}
           <div className="reveal-on-scroll relative flex flex-col rounded-3xl border border-border bg-surface/60 p-7 backdrop-blur">
             <h3 className="text-lg font-semibold tracking-tight">Institutional</h3>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              For organizations running their own or <strong className="text-foreground">contracted</strong> AI —
-              fixed-cost models, not constant API spend. Budget and track that spend by department, all in one console.
+              <strong className="text-foreground">Bring your own API keys.</strong> Your keys pay your providers
+              directly — Tokeville sits on top to budget, meter, and govern. Chat runs on your keys and each call is
+              logged as spend against a department, so you keep full control and one clean view of it all.
             </p>
             <div className="mt-5 flex items-baseline gap-1.5">
               <span className="tnum gold-text font-mono text-3xl font-bold">From $49</span>
@@ -266,10 +266,10 @@ export default function LandingPage() {
 
             <ul className="mt-5 space-y-2 text-sm">
               {[
-                "Consolidated USD dashboard across all AI tools",
-                "Monthly budgets per department or team",
-                "Log spend manually or import via CSV",
-                "Automatic alerts at 80% of any budget",
+                "Bring your own Anthropic, OpenAI, Google or Mistral keys",
+                "Metered chat on your keys — logged in USD by department",
+                "Delegate a key to a department; monthly budgets + 80% alerts",
+                "Log other spend manually or import via CSV — one console",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-2.5 text-muted">
                   <CheckGlyph className="mt-0.5 h-4 w-4 shrink-0 text-gold" />

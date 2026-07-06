@@ -10,19 +10,26 @@
  * NEXT_PUBLIC_). A provider with no key set simply isn't offered yet.
  */
 
-export type PlatformProvider = "anthropic" | "openai" | "google";
+export type PlatformProvider = "anthropic" | "openai" | "google" | "mistral";
 
 const ENV_VAR: Record<PlatformProvider, string> = {
   anthropic: "PLATFORM_ANTHROPIC_API_KEY",
   openai: "PLATFORM_OPENAI_API_KEY",
   google: "PLATFORM_GOOGLE_API_KEY",
+  mistral: "PLATFORM_MISTRAL_API_KEY",
 };
 
-export function getPlatformKey(provider: string): { apiKey: string } | null {
-  const envVar = ENV_VAR[provider as PlatformProvider];
+/** Base URL for OpenAI-compatible platform providers (used by the chat streamer). */
+const BASE_URL: Partial<Record<PlatformProvider, string>> = {
+  mistral: "https://api.mistral.ai/v1",
+};
+
+export function getPlatformKey(provider: string): { apiKey: string; baseUrl?: string } | null {
+  const p = provider as PlatformProvider;
+  const envVar = ENV_VAR[p];
   if (!envVar) return null;
   const apiKey = process.env[envVar];
-  return apiKey ? { apiKey } : null;
+  return apiKey ? { apiKey, baseUrl: BASE_URL[p] } : null;
 }
 
 /** Which providers Tokeville currently has a funded key for. */

@@ -44,6 +44,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_…   # publishable key, safe for t
 PLATFORM_ANTHROPIC_API_KEY=                       # SERVER ONLY — Tokeville's own funded key, powers ALL Team-tier chat
 PLATFORM_OPENAI_API_KEY=                          # optional — unset means OpenAI shows "not yet enabled"
 PLATFORM_GOOGLE_API_KEY=                          # optional — unset means Google shows "not yet enabled"
+PLATFORM_MISTRAL_API_KEY=                         # optional — Mistral (OpenAI-compatible, base URL in platformKeys.ts)
 ```
 
 **Test logins** (demo data; admin Settings → "Reset demo data" restores seed):

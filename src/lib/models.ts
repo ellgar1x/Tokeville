@@ -4,7 +4,7 @@
  * to the string passed to `use_tokens` RPC.
  */
 
-export type ProviderKey = "anthropic" | "openai" | "google" | "custom";
+export type ProviderKey = "anthropic" | "openai" | "google" | "mistral" | "custom";
 
 export interface ModelDef {
   id: string;
@@ -28,6 +28,8 @@ export interface ProviderDef {
   key: ProviderKey;
   label: string;
   color: string;
+  /** Base URL for OpenAI-compatible providers (Mistral etc.); undefined = provider default. */
+  baseUrl?: string;
   models: ModelDef[];
 }
 
@@ -313,6 +315,37 @@ export const PROVIDERS: ProviderDef[] = [
         outputPer1M: 0.3,
         supportsTools: true,
         supportsVision: true,
+      },
+    ],
+  },
+  {
+    key: "mistral",
+    label: "Mistral",
+    color: "#f97316",
+    baseUrl: "https://api.mistral.ai/v1",
+    // Pricing verified July 2026 (mistral.ai/pricing): Large $2/$6, Small $0.10/$0.30 per 1M.
+    models: [
+      {
+        id: "mistral-large-latest",
+        label: "Mistral Large",
+        description: "Mistral's flagship. Strong reasoning, 128K context.",
+        contextK: 128,
+        outputK: 8,
+        inputPer1M: 2,
+        outputPer1M: 6,
+        supportsTools: true,
+        supportsVision: false,
+      },
+      {
+        id: "mistral-small-latest",
+        label: "Mistral Small",
+        description: "Fast and cheap for everyday tasks.",
+        contextK: 128,
+        outputK: 8,
+        inputPer1M: 0.1,
+        outputPer1M: 0.3,
+        supportsTools: true,
+        supportsVision: false,
       },
     ],
   },

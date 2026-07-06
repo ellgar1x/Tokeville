@@ -19,8 +19,9 @@ export function AIProviderSettings() {
       <div>
         <h2 className="text-sm font-semibold tracking-tight">AI Models</h2>
         <p className="mt-0.5 text-xs text-subtle">
-          Powered by Tokeville — nothing to configure. Usage is metered automatically against
-          your treasury and project budgets.
+          Your tokens run on <span className="font-medium text-foreground">Tokeville&apos;s own keys</span> — no
+          provider accounts, no API keys to manage. Every model below is metered against your treasury and project
+          budgets automatically. Want a provider that isn&apos;t live yet? Ask us to enable it.
         </p>
       </div>
 
