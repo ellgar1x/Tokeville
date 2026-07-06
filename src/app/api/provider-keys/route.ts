@@ -20,7 +20,7 @@ export async function GET() {
   // RLS returns the caller's own keys (any user) plus every workspace key (admins).
   const { data, error } = await supabase
     .from("provider_api_keys")
-    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, created_at")
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, assigned_department_id, created_at")
     .eq("workspace_id", workspaceId)
     .order("created_at");
 
@@ -156,12 +156,14 @@ export async function PATCH(request: Request) {
     patch.spent_tokens = Math.max(0, budgetTok - Math.round(tokensFromUsd(remainingUsd)));
   }
 
-  // Delegation — pin the key to one member or one project (or back to shared).
-  // Targets are validated against the caller's workspace before writing.
+  // Delegation — pin the key to one member, project, or department (or back to
+  // shared). Targets are validated against the caller's workspace before writing;
+  // the three assignment columns are mutually exclusive.
   if (assignTo !== undefined) {
     if (assignTo === "shared") {
       patch.assigned_user_id = null;
       patch.assigned_sub_account_id = null;
+      patch.assigned_department_id = null;
     } else if (assignTo.startsWith("user:")) {
       const targetId = assignTo.slice(5);
       const { data: member } = await supabase
@@ -173,6 +175,7 @@ export async function PATCH(request: Request) {
       if (!member) return NextResponse.json({ error: "That person isn't in your workspace." }, { status: 400 });
       patch.assigned_user_id = targetId;
       patch.assigned_sub_account_id = null;
+      patch.assigned_department_id = null;
     } else if (assignTo.startsWith("project:")) {
       const targetId = assignTo.slice(8);
       const { data: acct } = await supabase
@@ -184,8 +187,21 @@ export async function PATCH(request: Request) {
       if (!acct) return NextResponse.json({ error: "That project isn't in your workspace." }, { status: 400 });
       patch.assigned_sub_account_id = targetId;
       patch.assigned_user_id = null;
+      patch.assigned_department_id = null;
+    } else if (assignTo.startsWith("department:")) {
+      const targetId = assignTo.slice(11);
+      const { data: dept } = await supabase
+        .from("departments")
+        .select("id")
+        .eq("id", targetId)
+        .eq("workspace_id", workspaceId)
+        .single();
+      if (!dept) return NextResponse.json({ error: "That department isn't in your workspace." }, { status: 400 });
+      patch.assigned_department_id = targetId;
+      patch.assigned_user_id = null;
+      patch.assigned_sub_account_id = null;
     } else {
-      return NextResponse.json({ error: "assignTo must be 'shared', 'user:<id>', or 'project:<id>'" }, { status: 400 });
+      return NextResponse.json({ error: "assignTo must be 'shared', 'user:<id>', 'project:<id>', or 'department:<id>'" }, { status: 400 });
     }
   }
 
@@ -198,7 +214,7 @@ export async function PATCH(request: Request) {
     .update(patch)
     .eq("id", id)
     .eq("workspace_id", workspaceId)
-    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, created_at")
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, assigned_department_id, created_at")
     .single();
 
   if (error) {

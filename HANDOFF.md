@@ -15,7 +15,27 @@ those budgets — across providers (Anthropic, OpenAI, Google), through one chat
 - Aesthetic: premium **black & gold**, monospaced/tabular figures, dependency-free SVG charts.
 - Live on Vercel, GitHub repo `ellgar1x/Tokeville`. Deploys on push to `main`.
 
-### Two product tiers (chosen at admin sign-up, switchable in Settings)
+### The two products (2026-07-03) — chat key source + billing differ by workspace type
+- **Managed** (`workspaces.type='team'`, UI label "Managed"): the reseller model. ALL chat
+  routes through **Tokeville's own platform keys** (`src/lib/platformKeys.ts`,
+  `PLATFORM_<PROVIDER>_API_KEY`); deposited TOK is real purchasing power that pays for usage;
+  metered per call via `use_tokens`/`use_tokens_personal`; 5% deposit fee. Nothing for the
+  customer to configure.
+- **Institutional = BYO-key** (`workspaces.type='institution'`): the customer adds their **own**
+  provider keys (Settings-style "AI Keys" tab on `/institution`, `InstitutionKeys.tsx` →
+  `/api/provider-keys`). A "Chat" tab (`ChatWorkspace billingMode="usd"`) routes chat through
+  the **workspace's own key** (`getWorkspaceKey` in `api/chat/route.ts`, delegation-aware), and
+  each reply's **exact USD cost is logged as a metered `spend_entries` row against the chosen
+  department** (`record_spend`, source='metered') — feeding the department's budget, 80% alerts,
+  overview + CSV. Pre-flight blocks a chat (402) if the department is over its monthly budget;
+  no BYO key for the provider → 503. No deposit/treasury/TOK. Priced by the per-seat subscription.
+  Keys can be **delegated to a department** (`provider_api_keys.assigned_department_id`) so one key
+  never serves the whole institution. `spend_entries.amount_usd` widened to numeric(14,6) so
+  sub-cent per-call metering accumulates exactly (was (12,2) → rounded every call to $0).
+  Verified end-to-end with a REAL Anthropic call: cost matched the Sonnet rate card exactly and
+  logged to the department; over-budget + no-key gates fire; Managed path unchanged (regression ok).
+
+### Legacy note (older tiers doc below may say Team/$99 — superseded by the two products above)
 - **Team** (default) — **full reseller model (2026-07-03)**: Tokeville holds its own funded
   provider API keys ("platform keys") and ALL chat routes through those, not customer keys.
   Deposited TOK is real purchasing power backing that spend — not just an internal counter.

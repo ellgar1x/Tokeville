@@ -3,9 +3,44 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { findModel, type ModelDef, type ProviderDef } from "@/lib/models";
 import { getPlatformKey } from "@/lib/platformKeys";
+import { decryptSecret } from "@/lib/crypto";
 import { tokensFromUsd } from "@/lib/format";
+
+/**
+ * BYO-key resolution for Institutional (bring-your-own-key) workspaces — the
+ * workspace's OWN stored key, delegation-aware: a key assigned to the caller
+ * wins, else any shared (un-delegated) key. Uses the service client because
+ * members can't SELECT workspace keys under RLS (the route has already
+ * authenticated the caller + scoped to their workspace; key material stays
+ * server-side). Never a platform key — Institutional pays its provider directly.
+ */
+async function getWorkspaceKey(
+  workspaceId: string,
+  userId: string,
+  provider: string,
+  billedDepartmentId: string | null,
+): Promise<ResolvedKey | null> {
+  const service = createServiceClient();
+  const { data: keys } = await service
+    .from("provider_api_keys")
+    .select("api_key, base_url, assigned_user_id, assigned_sub_account_id, assigned_department_id")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", provider)
+    .order("created_at");
+  if (!keys?.length) return null;
+  const shared = (k: (typeof keys)[number]) =>
+    !k.assigned_user_id && !k.assigned_sub_account_id && !k.assigned_department_id;
+  // Precedence: key pinned to the billed department → key pinned to the caller → any shared key.
+  const chosen =
+    (billedDepartmentId ? keys.find((k) => k.assigned_department_id === billedDepartmentId) : undefined) ??
+    keys.find((k) => k.assigned_user_id === userId) ??
+    keys.find(shared);
+  if (!chosen) return null;
+  return { apiKey: decryptSecret(chosen.api_key), baseUrl: chosen.base_url };
+}
 
 const MAX_MESSAGES = 50;
 const MAX_MESSAGE_CHARS = 50_000;
@@ -248,6 +283,9 @@ export async function POST(request: Request) {
     console.error("[chat] User has no workspace_id", { userId: user.id });
     return NextResponse.json({ error: "No workspace" }, { status: 403 });
   }
+  // Managed (team) = platform key + TOK deposit. Institutional = the workspace's
+  // OWN key + USD spend logged against a department (BYO-key, no deposit).
+  const isInstitution = (user.app_metadata?.workspace_type ?? "team") === "institution";
 
   let body: ChatBody;
   try { body = await request.json(); } catch {
@@ -286,7 +324,41 @@ export async function POST(request: Request) {
   // "personal" bills straight to the treasury's unallocated funds (no project).
   const isPersonal = subAccountId === "personal";
 
-  if (isPersonal) {
+  if (isInstitution) {
+    // BYO-key: subAccountId is a DEPARTMENT id; usage is logged in USD and gated
+    // by the department's monthly budget. No "personal"/treasury concept here.
+    if (isPersonal) {
+      return NextResponse.json({ error: "Pick a department to bill this chat to." }, { status: 400 });
+    }
+    const { data: dept, error: deptErr } = await supabase
+      .from("departments")
+      .select("id, name, monthly_budget_usd")
+      .eq("id", subAccountId)
+      .single();
+    if (deptErr || !dept) {
+      console.error("[chat] Department not found", { subAccountId, userId: user.id, err: deptErr?.message });
+      return NextResponse.json({ error: "Department not found in your workspace" }, { status: 403 });
+    }
+    const budget = Number(dept.monthly_budget_usd);
+    if (budget > 0) {
+      const monthStart = new Date();
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
+      const { data: entries } = await supabase
+        .from("spend_entries")
+        .select("amount_usd")
+        .eq("department_id", subAccountId)
+        .gte("spent_on", monthStart.toISOString().slice(0, 10));
+      const spent = (entries ?? []).reduce((s, e) => s + Number(e.amount_usd), 0);
+      if (spent >= budget) {
+        console.error("[chat] Department over budget", { subAccountId, spent, budget });
+        return NextResponse.json(
+          { error: `${dept.name} has reached its monthly budget of $${budget.toFixed(2)}. Raise it on the Departments tab to keep chatting.` },
+          { status: 402 },
+        );
+      }
+    }
+  } else if (isPersonal) {
     // Check there's unallocated treasury BEFORE incurring any AI cost.
     const [{ data: wallet }, { data: accts }] = await Promise.all([
       supabase.from("wallets").select("balance_tokens").single(),
@@ -334,10 +406,16 @@ export async function POST(request: Request) {
   // Always append the artifact guide so file/pptx generation works.
   const systemPrompt = (reqSystemPrompt ?? modelDef.systemPrompt ?? DEFAULT_SYSTEM) + ARTIFACT_GUIDE;
 
-  const creds: ResolvedKey | null = getPlatformKey(provider.key);
+  const creds: ResolvedKey | null = isInstitution
+    ? await getWorkspaceKey(workspaceId, user.id, provider.key, subAccountId)
+    : getPlatformKey(provider.key);
   if (!creds) {
     return NextResponse.json(
-      { error: `${provider.label} isn't enabled on Tokeville yet — contact support.` },
+      {
+        error: isInstitution
+          ? `No ${provider.label} key added yet. Add one under Settings → AI Keys, or ask an admin to assign you one.`
+          : `${provider.label} isn't enabled on Tokeville yet — contact support.`,
+      },
       { status: 503 },
     );
   }
@@ -367,7 +445,20 @@ export async function POST(request: Request) {
         (usage.output / 1_000_000) * modelDef.outputPer1M;
       const costTok = Math.max(1, Math.round(tokensFromUsd(costUsd)));
 
-      const { error: rpcError } = isPersonal
+      // Institutional: log the exact USD cost as a metered spend entry against the
+      // chosen department (feeds its budget, 80% alerts, overview + CSV). The
+      // customer's own key already paid the provider — no TOK/treasury involved.
+      // Managed: deduct TOK from the sub-account (or unallocated treasury).
+      const { error: rpcError } = isInstitution
+        ? await supabase.rpc("record_spend", {
+            p_department_id: subAccountId,
+            p_tool: `Chat · ${modelDef.label}`,
+            p_amount_usd: Number(costUsd.toFixed(6)),
+            p_spent_on: new Date().toISOString().slice(0, 10),
+            p_note: "Metered AI chat",
+            p_source: "metered",
+          })
+        : isPersonal
         ? await supabase.rpc("use_tokens_personal", {
             p_workspace_id: workspaceId,
             p_amount: costTok,
@@ -381,7 +472,7 @@ export async function POST(request: Request) {
             p_detail: `Chat · ${modelDef.label}`,
           });
       if (rpcError) {
-        console.error("[chat] token deduction RPC failed", { subAccountId, costTok, isPersonal, error: rpcError.message });
+        console.error("[chat] spend RPC failed", { subAccountId, costTok, costUsd, isInstitution, isPersonal, error: rpcError.message });
       }
 
       send({

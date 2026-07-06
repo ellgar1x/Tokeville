@@ -1,16 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInstitution, type SpendInput } from "@/store/institution";
 import { usd } from "@/lib/format";
 import type { Department, SpendEntry } from "@/lib/data";
 import { INSTITUTIONAL_TIERS, tierById, type InstitutionalTierId } from "@/lib/plans";
+import { ChatWorkspace } from "@/components/ChatWorkspace";
+import { InstitutionKeys } from "@/components/InstitutionKeys";
 
-type Tab = "overview" | "departments" | "spend" | "import" | "account";
+type Tab = "overview" | "departments" | "chat" | "keys" | "spend" | "import" | "account";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "departments", label: "Departments" },
+  { id: "chat", label: "Chat" },
+  { id: "keys", label: "AI Keys" },
   { id: "spend", label: "Log spend" },
   { id: "import", label: "Import CSV" },
   { id: "account", label: "Account" },
@@ -59,6 +63,8 @@ export default function InstitutionPage() {
 
       {tab === "overview" && <Overview />}
       {tab === "departments" && <Departments />}
+      {tab === "chat" && <ChatTab />}
+      {tab === "keys" && <KeysTab />}
       {tab === "spend" && <LogSpend />}
       {tab === "import" && <ImportCsv />}
       {tab === "account" && <Account />}
@@ -656,6 +662,49 @@ function ImportCsv() {
       )}
     </div>
   );
+}
+
+/** Metered BYO-key chat, billed in USD against a department budget. */
+function ChatTab() {
+  const { state } = useInstitution();
+  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/provider-keys")
+      .then((r) => r.json())
+      .then((d) => setAvailableProviders(Array.from(new Set((d.keys ?? []).map((k: { provider: string }) => k.provider)))))
+      .catch(() => setAvailableProviders([]));
+  }, []);
+
+  const accounts = state.departments.map((d) => ({ id: d.id, name: d.name }));
+  if (accounts.length === 0) {
+    return <Empty title="No departments yet" body="Add a department on the Departments tab first — metered chat bills its USD cost to a department budget." />;
+  }
+  if (availableProviders.length === 0) {
+    return <Empty title="No API keys yet" body="Add your own provider key on the AI Keys tab. Chat runs on your keys and logs the USD cost against a department." />;
+  }
+
+  return (
+    <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 230px)" }}>
+      <p className="text-sm text-subtle">
+        Chat runs on <span className="font-medium text-foreground">your own API keys</span>. Each reply&apos;s exact USD
+        cost is logged as metered spend against the department you pick — feeding its budget and alerts.
+      </p>
+      <ChatWorkspace
+        accounts={accounts}
+        availableProviders={availableProviders}
+        storageKey={`institution-${state.workspaceId}`}
+        billingMode="usd"
+        accountNoun="department"
+      />
+    </div>
+  );
+}
+
+/** BYO-key management for the institution — add keys, delegate to departments. */
+function KeysTab() {
+  const { state } = useInstitution();
+  return <InstitutionKeys departments={state.departments.map((d) => ({ id: d.id, name: d.name }))} />;
 }
 
 function Account() {

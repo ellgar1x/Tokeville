@@ -93,12 +93,22 @@ export function ChatWorkspace({
   availableProviders,
   storageKey,
   allowPersonal = false,
+  billingMode = "tok",
+  accountNoun = "budget",
 }: {
   accounts: { id: string; name: string }[];
   availableProviders?: string[];
   storageKey: string;
   allowPersonal?: boolean;
+  /** "tok" = Managed (deposit-funded, deducts TOK). "usd" = BYO-key (own key, logs USD spend). */
+  billingMode?: "tok" | "usd";
+  /** What an "account" is called here — "budget"/"project" (Managed) or "department" (Institutional). */
+  accountNoun?: string;
 }) {
+  const isUsd = billingMode === "usd";
+  // How each reply's metered cost is shown: TOK for Managed, USD for BYO-key.
+  const fmtCost = (u: ChatUsage) =>
+    isUsd ? `$${(u.costUsd ?? 0).toFixed(4)}` : tok(u.total);
   const lsKey = `tokeville-workspace-${storageKey}`;
   const defaultAccountId = accounts[0]?.id ?? (allowPersonal ? "personal" : "");
 
@@ -201,6 +211,7 @@ export function ChatWorkspace({
 
   const selectedModel = ALL_MODELS.find((m) => m.id === active?.model);
   const sessionTotal = active?.messages.reduce((s, m) => s + (m.usage?.total ?? 0), 0) ?? 0;
+  const sessionUsd = active?.messages.reduce((s, m) => s + (m.usage?.costUsd ?? 0), 0) ?? 0;
 
   async function send() {
     const text = input.trim();
@@ -411,6 +422,9 @@ export function ChatWorkspace({
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>Bill: {a.name}</option>
               ))}
+              {accounts.length === 0 && !allowPersonal && (
+                <option value="" disabled>No {accountNoun} yet</option>
+              )}
             </select>
           </div>
         </div>
@@ -473,7 +487,7 @@ export function ChatWorkspace({
                 {m.usage && (
                   <p className="tnum mt-1 px-1 text-[11px] text-subtle">
                     ↑ {m.usage.input.toLocaleString()} in · ↓ {m.usage.output.toLocaleString()} out ·{" "}
-                    <span className="font-medium text-gold">{tok(m.usage.total)}</span> metered
+                    <span className="font-medium text-gold">{fmtCost(m.usage)}</span> metered
                   </p>
                 )}
               </div>
@@ -493,19 +507,25 @@ export function ChatWorkspace({
                 <CoinsIcon className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-gold">Insufficient balance</p>
+                <p className="text-sm font-semibold text-gold">
+                  {isUsd ? `This ${accountNoun} is over budget` : "Insufficient balance"}
+                </p>
                 <p className="text-xs text-muted">
-                  This budget is out of tokens. Top up your wallet to keep chatting.
+                  {isUsd
+                    ? `This ${accountNoun} has hit its monthly budget. Raise it on the Departments tab to keep chatting.`
+                    : "This budget is out of tokens. Top up your wallet to keep chatting."}
                 </p>
               </div>
             </div>
-            <Link
-              href="/deposit"
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
-            >
-              <PlusIcon className="h-4 w-4" />
-              Deposit funds
-            </Link>
+            {!isUsd && (
+              <Link
+                href="/deposit"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
+              >
+                <PlusIcon className="h-4 w-4" />
+                Deposit funds
+              </Link>
+            )}
           </div>
         )}
 
@@ -579,7 +599,7 @@ export function ChatWorkspace({
 
         {sessionTotal > 0 && (
           <p className="border-t border-border px-4 py-2 text-xs text-subtle">
-            This session: <span className="tnum font-medium text-gold">{tok(sessionTotal)}</span> metered across {active.messages.filter((m) => m.usage).length} replies
+            This session: <span className="tnum font-medium text-gold">{isUsd ? `$${sessionUsd.toFixed(4)}` : tok(sessionTotal)}</span> metered across {active.messages.filter((m) => m.usage).length} replies
           </p>
         )}
       </div>
