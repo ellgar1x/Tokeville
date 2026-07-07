@@ -20,7 +20,7 @@ export async function GET() {
   // RLS returns the caller's own keys (any user) plus every workspace key (admins).
   const { data, error } = await supabase
     .from("provider_api_keys")
-    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, assigned_department_id, created_at")
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, assigned_department_id, custom_model, custom_model_label, custom_input_per_1m, custom_output_per_1m, created_at")
     .eq("workspace_id", workspaceId)
     .order("created_at");
 
@@ -43,15 +43,30 @@ export async function POST(request: Request) {
   const workspaceId = user.app_metadata?.workspace_id;
   if (!workspaceId) return NextResponse.json({ error: "No workspace" }, { status: 403 });
 
-  let body: { provider?: string; label?: string; apiKey?: string; baseUrl?: string; budgetUsd?: number };
+  let body: {
+    provider?: string; label?: string; apiKey?: string; baseUrl?: string; budgetUsd?: number;
+    // "Any endpoint": a custom provider defines one model + the customer's own pricing.
+    customModel?: string; customModelLabel?: string; customInputPer1M?: number; customOutputPer1M?: number;
+  };
   try { body = await request.json(); } catch {
     console.error("[provider-keys] POST: invalid JSON body");
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const { provider, label, apiKey, baseUrl, budgetUsd } = body;
+  const { provider, label, apiKey, baseUrl, budgetUsd, customModel, customModelLabel, customInputPer1M, customOutputPer1M } = body;
   if (!provider || !label || !apiKey) {
     return NextResponse.json({ error: "provider, label, and apiKey are required" }, { status: 400 });
+  }
+
+  // A custom (OpenAI-compatible) provider needs a base URL, a model id, and its
+  // published per-1M prices so metering stays exact for any endpoint.
+  const isCustom = provider === "custom";
+  if (isCustom) {
+    if (!baseUrl) return NextResponse.json({ error: "Custom providers need a base URL." }, { status: 400 });
+    if (!customModel) return NextResponse.json({ error: "Custom providers need a model id." }, { status: 400 });
+    if (typeof customInputPer1M !== "number" || typeof customOutputPer1M !== "number" || customInputPer1M < 0 || customOutputPer1M < 0) {
+      return NextResponse.json({ error: "Enter the model's input and output price per 1M tokens (USD) so usage can be metered." }, { status: 400 });
+    }
   }
 
   // Optional per-key budget, entered in USD and stored as TOK (null = no cap).
@@ -68,8 +83,12 @@ export async function POST(request: Request) {
       api_key: encryptSecret(apiKey),
       base_url: baseUrl ?? null,
       budget_tokens: budgetTokens,
+      custom_model: isCustom ? customModel : null,
+      custom_model_label: isCustom ? (customModelLabel || customModel) : null,
+      custom_input_per_1m: isCustom ? customInputPer1M : null,
+      custom_output_per_1m: isCustom ? customOutputPer1M : null,
     })
-    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, created_at")
+    .select("id, provider, label, base_url, budget_tokens, spent_tokens, owner_user_id, assigned_user_id, assigned_sub_account_id, assigned_department_id, custom_model, custom_model_label, custom_input_per_1m, custom_output_per_1m, created_at")
     .single();
 
   if (error) {

@@ -95,6 +95,7 @@ export function ChatWorkspace({
   allowPersonal = false,
   billingMode = "tok",
   accountNoun = "budget",
+  extraModels = [],
 }: {
   accounts: { id: string; name: string }[];
   availableProviders?: string[];
@@ -104,6 +105,8 @@ export function ChatWorkspace({
   billingMode?: "tok" | "usd";
   /** What an "account" is called here — "budget"/"project" (Managed) or "department" (Institutional). */
   accountNoun?: string;
+  /** Extra selectable models beyond the registry (e.g. BYO custom "any endpoint" models). */
+  extraModels?: { id: string; label: string }[];
 }) {
   const isUsd = billingMode === "usd";
   // How each reply's metered cost is shown: TOK for Managed, USD for BYO-key.
@@ -401,6 +404,13 @@ export function ChatWorkspace({
               className={selectClass}
               style={{ minWidth: 180 }}
             >
+              {extraModels.length > 0 && (
+                <optgroup label="Your models">
+                  {extraModels.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </optgroup>
+              )}
               {PROVIDERS.map((p) => (
                 <optgroup key={p.key} label={p.label}>
                   {p.models.map((m) => (

@@ -42,6 +42,40 @@ async function getWorkspaceKey(
   return { apiKey: decryptSecret(chosen.api_key), baseUrl: chosen.base_url };
 }
 
+/**
+ * "Any endpoint": resolve a workspace custom model (an OpenAI-compatible key
+ * with a customer-defined model + their own published per-1M pricing) so it
+ * can be metered exactly. Synthesizes a provider + model def from the row.
+ */
+async function getCustomModel(
+  workspaceId: string,
+  modelId: string,
+): Promise<{ provider: ProviderDef; modelDef: ModelDef; creds: ResolvedKey } | null> {
+  const service = createServiceClient();
+  const { data } = await service
+    .from("provider_api_keys")
+    .select("api_key, base_url, custom_model, custom_model_label, custom_input_per_1m, custom_output_per_1m")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "custom")
+    .eq("custom_model", modelId)
+    .order("created_at")
+    .limit(1);
+  const row = data?.[0];
+  if (!row || row.custom_input_per_1m == null || row.custom_output_per_1m == null) return null;
+  const provider: ProviderDef = { key: "custom", label: "Custom", color: "#888", baseUrl: row.base_url ?? undefined, models: [] };
+  const modelDef: ModelDef = {
+    id: row.custom_model as string,
+    apiModelId: row.custom_model as string,
+    label: (row.custom_model_label as string) ?? (row.custom_model as string),
+    description: "Custom endpoint",
+    contextK: 0,
+    outputK: 0,
+    inputPer1M: Number(row.custom_input_per_1m),
+    outputPer1M: Number(row.custom_output_per_1m),
+  };
+  return { provider, modelDef, creds: { apiKey: decryptSecret(row.api_key), baseUrl: row.base_url } };
+}
+
 const MAX_MESSAGES = 50;
 const MAX_MESSAGE_CHARS = 50_000;
 
@@ -399,28 +433,40 @@ export async function POST(request: Request) {
     }
   }
 
+  let provider: ProviderDef;
+  let modelDef: ModelDef;
+  let creds: ResolvedKey | null;
+
   const found = findModel(model);
-  if (!found) {
+  if (found) {
+    ({ provider, model: modelDef } = found as { provider: ProviderDef; model: ModelDef });
+    creds = isInstitution
+      ? await getWorkspaceKey(workspaceId, user.id, provider.key, subAccountId)
+      : getPlatformKey(provider.key);
+    if (!creds) {
+      return NextResponse.json(
+        {
+          error: isInstitution
+            ? `No ${provider.label} key added yet. Add one under Settings → AI Keys, or ask an admin to assign you one.`
+            : `${provider.label} isn't enabled on Tokeville yet — contact support.`,
+        },
+        { status: 503 },
+      );
+    }
+  } else if (isInstitution) {
+    // "Any endpoint": a custom OpenAI-compatible model the workspace defined.
+    const custom = await getCustomModel(workspaceId, model);
+    if (!custom) {
+      return NextResponse.json({ error: `Unknown model: ${model}` }, { status: 400 });
+    }
+    ({ provider, modelDef, creds } = custom);
+  } else {
     return NextResponse.json({ error: `Unknown model: ${model}` }, { status: 400 });
   }
-  const { provider, model: modelDef } = found as { provider: ProviderDef; model: ModelDef };
+
   const apiModel = modelDef.apiModelId ?? model;
   // Always append the artifact guide so file/pptx generation works.
   const systemPrompt = (reqSystemPrompt ?? modelDef.systemPrompt ?? DEFAULT_SYSTEM) + ARTIFACT_GUIDE;
-
-  const creds: ResolvedKey | null = isInstitution
-    ? await getWorkspaceKey(workspaceId, user.id, provider.key, subAccountId)
-    : getPlatformKey(provider.key);
-  if (!creds) {
-    return NextResponse.json(
-      {
-        error: isInstitution
-          ? `No ${provider.label} key added yet. Add one under Settings → AI Keys, or ask an admin to assign you one.`
-          : `${provider.label} isn't enabled on Tokeville yet — contact support.`,
-      },
-      { status: 503 },
-    );
-  }
 
   const encoder = new TextEncoder();
   const usage: Usage = { input: 0, output: 0 };

@@ -45,7 +45,7 @@ export function InstitutionKeys({ departments }: { departments: { id: string; na
   const [deleting, setDeleting] = useState<string | null>(null);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ provider: "anthropic", label: "Anthropic", apiKey: "", baseUrl: "", budgetUsd: "" });
+  const [form, setForm] = useState({ provider: "anthropic", label: "Anthropic", apiKey: "", baseUrl: "", budgetUsd: "", customModel: "", customInput: "", customOutput: "" });
 
   const opt = PROVIDER_OPTIONS.find((p) => p.key === form.provider)!;
   const inputClass =
@@ -63,7 +63,11 @@ export function InstitutionKeys({ departments }: { departments: { id: string; na
   async function addKey() {
     setError(null);
     if (!form.apiKey.trim()) { setError("API key is required."); return; }
-    if (opt.needsUrl && !form.baseUrl.trim()) { setError("Base URL is required for custom providers."); return; }
+    if (opt.needsUrl) {
+      if (!form.baseUrl.trim()) { setError("Base URL is required for custom providers."); return; }
+      if (!form.customModel.trim()) { setError("Enter the model id (e.g. accounts/…/models/… or the provider's model name)."); return; }
+      if (!form.customInput.trim() || !form.customOutput.trim()) { setError("Enter the model's input and output price per 1M tokens so usage can be metered."); return; }
+    }
     setAdding(true);
     const res = await fetch("/api/provider-keys", {
       method: "POST",
@@ -74,13 +78,19 @@ export function InstitutionKeys({ departments }: { departments: { id: string; na
         apiKey: form.apiKey,
         baseUrl: form.baseUrl || undefined,
         budgetUsd: form.budgetUsd ? parseFloat(form.budgetUsd) : undefined,
+        ...(opt.needsUrl ? {
+          customModel: form.customModel.trim(),
+          customModelLabel: form.label,
+          customInputPer1M: parseFloat(form.customInput),
+          customOutputPer1M: parseFloat(form.customOutput),
+        } : {}),
       }),
     });
     const data = await res.json();
     setAdding(false);
     if (!res.ok) { setError(data.error); return; }
     setKeys((prev) => [...prev, data.key]);
-    setForm({ provider: "anthropic", label: "Anthropic", apiKey: "", baseUrl: "", budgetUsd: "" });
+    setForm({ provider: "anthropic", label: "Anthropic", apiKey: "", baseUrl: "", budgetUsd: "", customModel: "", customInput: "", customOutput: "" });
     setShowForm(false);
   }
 
@@ -165,10 +175,34 @@ export function InstitutionKeys({ departments }: { departments: { id: string; na
             </div>
           </div>
           {opt.needsUrl && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-subtle">Base URL <span className="text-danger">*</span></label>
-              <input value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} placeholder="https://api.your-provider.com/v1" className={inputClass} />
-            </div>
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-subtle">Base URL <span className="text-danger">*</span></label>
+                <input value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} placeholder="https://api.your-provider.com/v1" className={inputClass} />
+                <p className="mt-1 text-[11px] text-subtle">Any OpenAI-compatible endpoint — Together, Groq, OpenRouter, Fireworks, a self-hosted model, etc.</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-subtle">Model id <span className="text-danger">*</span></label>
+                <input value={form.customModel} onChange={(e) => setForm((f) => ({ ...f, customModel: e.target.value }))} placeholder="the exact model name the endpoint expects" className={inputClass} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-subtle">Input price / 1M <span className="text-danger">*</span></label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-subtle">$</span>
+                    <input value={form.customInput} onChange={(e) => setForm((f) => ({ ...f, customInput: e.target.value.replace(/[^0-9.]/g, "") }))} placeholder="0.00" inputMode="decimal" className={`${inputClass} pl-7 font-mono`} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-subtle">Output price / 1M <span className="text-danger">*</span></label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-subtle">$</span>
+                    <input value={form.customOutput} onChange={(e) => setForm((f) => ({ ...f, customOutput: e.target.value.replace(/[^0-9.]/g, "") }))} placeholder="0.00" inputMode="decimal" className={`${inputClass} pl-7 font-mono`} />
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-subtle">We meter using these published prices so your department spend is exact for any provider.</p>
+            </>
           )}
           {error && <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{error}</p>}
           <div className="flex gap-2">

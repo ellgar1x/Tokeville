@@ -668,12 +668,21 @@ function ImportCsv() {
 function ChatTab() {
   const { state } = useInstitution();
   const [availableProviders, setAvailableProviders] = useState<string[]>([]);
+  const [extraModels, setExtraModels] = useState<{ id: string; label: string }[]>([]);
 
   useEffect(() => {
     fetch("/api/provider-keys")
       .then((r) => r.json())
-      .then((d) => setAvailableProviders(Array.from(new Set((d.keys ?? []).map((k: { provider: string }) => k.provider)))))
-      .catch(() => setAvailableProviders([]));
+      .then((d) => {
+        const keys: Array<{ provider: string; custom_model?: string | null; custom_model_label?: string | null }> = d.keys ?? [];
+        setAvailableProviders(Array.from(new Set(keys.map((k) => k.provider))));
+        setExtraModels(
+          keys
+            .filter((k) => k.provider === "custom" && k.custom_model)
+            .map((k) => ({ id: k.custom_model as string, label: (k.custom_model_label as string) ?? (k.custom_model as string) })),
+        );
+      })
+      .catch(() => { setAvailableProviders([]); setExtraModels([]); });
   }, []);
 
   const accounts = state.departments.map((d) => ({ id: d.id, name: d.name }));
@@ -693,6 +702,7 @@ function ChatTab() {
       <ChatWorkspace
         accounts={accounts}
         availableProviders={availableProviders}
+        extraModels={extraModels}
         storageKey={`institution-${state.workspaceId}`}
         billingMode="usd"
         accountNoun="department"
