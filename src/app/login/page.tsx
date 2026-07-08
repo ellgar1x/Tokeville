@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { TokevilleMark } from "@/components/icons";
@@ -292,7 +293,7 @@ function LoginInner() {
                   />
                 </div>
               )}
-              {adminMode === "signup" && (
+              {adminMode === "signup" && !invitedEmail && (
                 <div className="mb-4">
                   <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-subtle">
                     Account type
@@ -365,16 +366,28 @@ function LoginInner() {
                 {loading ? "Just a moment…" : adminMode === "signin" ? "Sign in" : "Create account"}
               </button>
             </form>
-            <p className="mt-5 text-center text-sm text-muted">
-              {adminMode === "signin" ? "New to Tokeville?" : "Already have an account?"}{" "}
-              <button
-                type="button"
-                onClick={() => { setAdminMode(adminMode === "signin" ? "signup" : "signin"); setError(null); }}
-                className="font-medium text-gold transition-colors duration-200 hover:text-gold-bright cursor-pointer"
-              >
-                {adminMode === "signin" ? "Create an account" : "Sign in"}
-              </button>
-            </p>
+            {adminMode === "signin" ? (
+              <p className="mt-5 text-center text-sm text-muted">
+                Don&apos;t have access yet?{" "}
+                <Link
+                  href="/landing#waitlist"
+                  className="font-medium text-gold transition-colors duration-200 hover:text-gold-bright"
+                >
+                  Join the waiting list
+                </Link>
+              </p>
+            ) : (
+              <p className="mt-5 text-center text-sm text-muted">
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => { setAdminMode("signin"); setError(null); }}
+                  className="font-medium text-gold transition-colors duration-200 hover:text-gold-bright cursor-pointer"
+                >
+                  Sign in
+                </button>
+              </p>
+            )}
           </>
         )}
       </div>

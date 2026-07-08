@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TokevilleMark } from "@/components/icons";
 import { ScrollReveal } from "@/components/ScrollReveal";
+import { WaitlistForm } from "@/components/WaitlistForm";
 import { INSTITUTIONAL_TIERS } from "@/lib/plans";
 
 export const metadata = {
@@ -35,12 +36,12 @@ export default function LandingPage() {
             >
               Sign in
             </Link>
-            <Link
-              href="/login"
+            <a
+              href="#waitlist"
               className="inline-flex h-9 items-center rounded-lg bg-gradient-to-b from-gold-bright to-gold px-4 text-sm font-semibold text-[#0a0a0b] shadow-[0_1px_8px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
             >
-              Get started
-            </Link>
+              Join waitlist
+            </a>
           </div>
         </nav>
       </header>
@@ -72,13 +73,13 @@ export default function LandingPage() {
             </p>
 
             <div className="reveal-on-scroll reveal-d3 mt-8 flex flex-col items-center gap-3 sm:flex-row lg:items-start lg:justify-start">
-              <Link
-                href="/login"
+              <a
+                href="#waitlist"
                 className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gold-bright to-gold px-7 text-sm font-bold text-[#0a0a0b] shadow-[0_2px_24px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep sm:w-auto"
               >
-                Start your treasury
+                Join the waiting list
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-              </Link>
+              </a>
               <a
                 href="#how"
                 className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-border-strong bg-surface/60 px-7 text-sm font-medium text-foreground backdrop-blur transition-colors duration-200 hover:border-gold/40 hover:text-gold sm:w-auto"
@@ -225,12 +226,12 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
-            <Link
-              href="/login"
+            <a
+              href="#waitlist"
               className="mt-7 inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-b from-gold-bright to-gold text-sm font-bold text-[#0a0a0b] shadow-[0_1px_12px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
             >
-              Start a Managed workspace
-            </Link>
+              Join the waiting list
+            </a>
           </div>
 
           {/* Institutional — bring your own keys */}
@@ -277,12 +278,12 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
-            <Link
-              href="/login"
+            <a
+              href="#waitlist"
               className="mt-7 inline-flex h-11 items-center justify-center rounded-xl border border-border-strong bg-surface px-6 text-sm font-semibold text-foreground transition-colors duration-200 hover:border-gold/40 hover:text-gold"
             >
-              Start an Institutional workspace
-            </Link>
+              Join the waiting list
+            </a>
           </div>
         </div>
       </section>
@@ -368,37 +369,32 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ─── Final CTA ────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-4xl px-5 pb-24 pt-6">
-        <div className="reveal-on-scroll relative overflow-hidden rounded-3xl border border-gold/25 bg-gradient-to-b from-surface to-background p-10 text-center sm:p-14">
+      {/* ─── Final CTA — waiting list ─────────────────────────────── */}
+      <section id="waitlist" className="mx-auto max-w-4xl scroll-mt-24 px-5 pb-24 pt-6">
+        <div className="reveal-on-scroll relative overflow-hidden rounded-3xl border border-gold/25 bg-gradient-to-b from-surface to-background p-8 text-center sm:p-12">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-x-0 -top-24 mx-auto h-48 w-[36rem] max-w-full rounded-full"
             style={{ background: "radial-gradient(closest-side, var(--gold-soft), transparent)" }}
           />
           <TokevilleMark className="mx-auto h-11 w-11" />
-          <h2 className="mt-6 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-            Put your AI budget on a balance sheet
+          <span className="mt-5 inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold-soft px-3 py-1 text-[11px] font-medium text-gold">
+            Invite-only · currently in private access
+          </span>
+          <h2 className="mt-4 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
+            Join the Tokeville waiting list
           </h2>
-          <p className="mx-auto mt-4 max-w-lg text-pretty text-muted">
-            Spin up a workspace in under a minute. No card required to explore — fund it
-            only when you&apos;re ready to meter real usage.
+          <p className="mx-auto mt-3 max-w-lg text-pretty text-muted">
+            We&apos;re onboarding teams in small batches. Leave your email and we&apos;ll reach out the
+            moment your spot is ready.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              href="/login"
-              className="group inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gold-bright to-gold px-8 text-sm font-bold text-[#0a0a0b] shadow-[0_2px_24px_var(--gold-soft)] transition-all duration-200 hover:from-gold hover:to-gold-deep sm:w-auto"
-            >
-              Create your workspace
-              <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex h-12 w-full items-center justify-center rounded-xl border border-border-strong px-8 text-sm font-medium text-foreground transition-colors duration-200 hover:border-gold/40 hover:text-gold sm:w-auto"
-            >
-              Sign in
-            </Link>
+          <div className="mx-auto mt-8 max-w-md">
+            <WaitlistForm />
           </div>
+          <p className="mt-5 text-center text-xs text-subtle">
+            Already have access?{" "}
+            <Link href="/login" className="font-medium text-gold transition-colors hover:text-gold-bright">Sign in</Link>
+          </p>
         </div>
       </section>
 

@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useDemo } from "@/store/demo";
 import { tok } from "@/lib/format";
-import { CoinsIcon, SettingsIcon, TokevilleMark } from "./icons";
+import { CoinsIcon, SettingsIcon, ShieldIcon, TokevilleMark } from "./icons";
 import { NAV_ITEMS } from "./navItems";
+import { isSuperAdmin } from "@/lib/superAdmin";
 
 export function Sidebar() {
   const { state, unallocated } = useDemo();
   const pathname = usePathname();
+  const superAdmin = isSuperAdmin(state.profile.email);
   const initials = (state.profile.displayName || state.profile.email || "U")
     .slice(0, 2)
     .toUpperCase();
@@ -45,6 +47,22 @@ export function Sidebar() {
               </li>
             );
           })}
+          {superAdmin && (
+            <li>
+              <Link
+                href="/admin"
+                aria-current={pathname.startsWith("/admin") ? "page" : undefined}
+                className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors duration-200 cursor-pointer ${
+                  pathname.startsWith("/admin")
+                    ? "bg-gold-soft text-gold font-medium"
+                    : "text-muted hover:bg-surface-2 hover:text-foreground"
+                }`}
+              >
+                <ShieldIcon className="h-[18px] w-[18px]" />
+                Console
+              </Link>
+            </li>
+          )}
         </ul>
       </nav>
 
