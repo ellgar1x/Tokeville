@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useDemo } from "@/store/demo";
 import { tok } from "@/lib/format";
-import { CardIcon, PlusIcon, TokevilleMark, CheckIcon } from "@/components/icons";
+import { CardIcon, PlusIcon, TokevilleMark, CheckIcon, ArrowUpRightIcon } from "@/components/icons";
 
 interface KeyRow {
   id: string;
@@ -15,7 +16,7 @@ interface KeyRow {
 }
 
 export default function CardsPage() {
-  const { state, notify } = useDemo();
+  const { state, unallocated, notify } = useDemo();
   const [frozen, setFrozen] = useState(false);
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +62,27 @@ export default function CardsPage() {
 
   return (
     <div className="space-y-6">
+      {unallocated <= 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gold/30 bg-gold-soft px-4 py-3 text-sm">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gold/15 text-gold">
+            <ArrowUpRightIcon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-gold">You have no unallocated tokens yet</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Keys are free to create, but they spend from your treasury — deposit funds first so there&apos;s something for your key to spend.
+            </p>
+          </div>
+          <Link
+            href="/deposit"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-b from-gold-bright to-gold px-3 text-xs font-semibold text-[#0a0a0b] shadow-[0_1px_8px_rgba(232,184,95,0.25)] transition-all duration-200 hover:from-gold hover:to-gold-deep"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            Deposit funds
+          </Link>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         {/* Virtual card */}
         <section className="lg:col-span-2">
@@ -101,7 +123,7 @@ export default function CardsPage() {
                 Your Tokeville API keys
               </h2>
               <p className="mt-0.5 text-xs text-subtle">
-                Your own key — usage runs on Tokeville&apos;s models and spends your tokens. No provider account needed.
+                Free to create — usage runs on Tokeville&apos;s models and spends the tokens you&apos;ve deposited. No provider account needed.
               </p>
             </div>
           </div>
@@ -183,8 +205,9 @@ export default function CardsPage() {
         <h2 className="text-sm font-semibold tracking-tight">Start spending with your key</h2>
         <p className="mt-0.5 text-xs text-subtle">
           Tokeville is OpenAI-compatible. Point any OpenAI SDK or tool at the gateway below and use your key — every
-          call runs on Tokeville&apos;s models and draws down your token balance ({tok(state.wallet.balanceTokens)} available).
-          {activeKeys.length === 0 && " Create a key above to begin."}
+          call runs on Tokeville&apos;s models and draws down your unallocated treasury ({tok(Math.max(unallocated, 0))} available
+          to spend this way).
+          {activeKeys.length === 0 && " Create a key above (it's free) to begin."}
         </p>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">

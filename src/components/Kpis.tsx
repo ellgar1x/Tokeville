@@ -19,10 +19,12 @@ export function Kpis() {
   const { state } = useDemo();
   const { wallet } = state;
 
-  const burn24h = wallet.dailySpend[wallet.dailySpend.length - 1];
-  const prev = wallet.dailySpend[wallet.dailySpend.length - 2];
-  const burnChange = ((burn24h - prev) / prev) * 100;
-  const runwayDays = Math.round(wallet.balanceTokens / burn24h);
+  // Empty dailySpend (brand-new workspace) makes these indices undefined; default to 0.
+  const burn24h = wallet.dailySpend[wallet.dailySpend.length - 1] ?? 0;
+  const prev = wallet.dailySpend[wallet.dailySpend.length - 2] ?? 0;
+  // Guard divide-by-zero for brand-new workspaces with no spend history yet.
+  const burnChange = prev ? ((burn24h - prev) / prev) * 100 : 0;
+  const runwayDays = burn24h ? Math.round(wallet.balanceTokens / burn24h) : null;
 
   const tiles = [
     {
@@ -45,8 +47,8 @@ export function Kpis() {
     {
       label: "Runway",
       icon: ClockIcon,
-      value: `${runwayDays} days`,
-      sub: "At current burn rate",
+      value: runwayDays == null ? "—" : `${runwayDays} days`,
+      sub: runwayDays == null ? "No spend yet" : "At current burn rate",
     },
     {
       label: "Exchange rate",

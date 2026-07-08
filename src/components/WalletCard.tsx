@@ -93,16 +93,21 @@ export function WalletCard() {
           value={tok(wallet.monthToDateTokens)}
           sub={
             <span className="tnum">
-              ≈ {usd(usdFromTokens(wallet.monthToDateTokens))} ·{" "}
-              {pct((wallet.monthToDateTokens / wallet.projectedMonthTokens) * 100)} of
-              run-rate
+              ≈ {usd(usdFromTokens(wallet.monthToDateTokens))}
+              {wallet.projectedMonthTokens > 0 && (
+                <> · {pct((wallet.monthToDateTokens / wallet.projectedMonthTokens) * 100)} of run-rate</>
+              )}
             </span>
           }
         />
         <Stat
           label="Allocated"
           value={tok(wallet.allocatedTokens)}
-          sub={`${pct((wallet.allocatedTokens / wallet.balanceTokens) * 100)} of balance committed`}
+          sub={
+            wallet.balanceTokens > 0
+              ? `${pct((wallet.allocatedTokens / wallet.balanceTokens) * 100)} of balance committed`
+              : "No treasury balance yet"
+          }
         />
         <Stat
           label="Unallocated"
